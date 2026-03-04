@@ -1,0 +1,14 @@
+[
+  {
+    "clients": [
+      {"id":1, "host":"localhost", "port":4001, "pub":"client1.pub"},
+      {"id":2, "host":"localhost", "port":4002, "pub":"client2.pub"}
+    ],
+    "nodes": [
+      {"id":1, "host":"localhost", "port":9001, "pub":"node1.pub"},
+      {"id":2, "host":"localhost", "port":9002, "pub":"node2.pub"},
+      {"id":3, "host":"localhost", "port":9003, "pub":"node3.pub"},
+      {"id":4, "host":"localhost", "port":9004, "pub":"node4.pub"}
+    ]
+  }
+]

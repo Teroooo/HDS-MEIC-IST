@@ -108,17 +108,37 @@ public class Node {
     }
 
     private static void handleAppendRequest(Link link, int nodeId, Message msg) throws Exception {
+        // client manda mensagem
+        // 1-1-1
+        // 1-1-2
+        // 1-1-3
+        // 1-1-4
+
+        // Réplicas enviam new view
+        // 2-1
+        // 3-1
+        // 4-1
+
+        // Réplicas recebem
+        
+        // Depois Réplicas mandam para o lider
+        // 2-2
+        // 3-2
+        // 4-2
+
+
+
         String command = msg.getPayload();
         JsonObject payloadJson = JsonParser.parseString(msg.getPayload()).getAsJsonObject();
         int clientId = payloadJson.get("clientId").getAsInt();
-        int messageId = msg.getMessageId();
+        int messageId = payloadJson.get("messageId").getAsInt();        
         String stringToAppend = payloadJson.get("text").getAsString();
 
         System.out.println("[NODE] Node " + nodeId + " received APPEND request from client " + clientId + ": \"" + stringToAppend + "\"");
 
         // If this node is the leader, queue the command
         String key = clientId + "-" + messageId;
-        System.out.println("[NODE] Checking for duplicate command with key: " + key);
+        //System.out.println("[NODE] Checking for duplicate command with key: " + key);
         if (pendingClientRequests.containsKey(key)) {
             System.out.println("[NODE] Duplicate command from client " + clientId + ", ignoring.");
             return;
@@ -132,7 +152,7 @@ public class Node {
         } else {
             // Forward to current leader
             int leaderId = ((consensus.getViewNumber() - 1) % 4) + 1;
-            System.out.println("[NODE] Node " + nodeId + " forwarding request to leader " + leaderId);
+            //System.out.println("[NODE] Node " + nodeId + " forwarding request to leader " + leaderId);
             link.send(Link.Type.NODE, leaderId, Message.Type.APPEND_STRING, command);
         }
     }

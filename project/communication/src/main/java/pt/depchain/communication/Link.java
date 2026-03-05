@@ -194,13 +194,13 @@ public class Link {
                     // For client broadcasts, we added "-replicaId" to the uniqueId
                     uniqueId = makeUniqueId(originalSenderId, msg.getMessageId(), type) + "-" + msg.getSenderId();
                 } else {
-                        // Node-to-node messages use the old uniqueId
-                        uniqueId = makeUniqueId(originalSenderId, msg.getMessageId(), type);
+                    // Node-to-node messages use the old uniqueId
+                    uniqueId = makeUniqueId(originalSenderId, msg.getMessageId(), type);
                 }
 
                 if (pending.remove(uniqueId) != null) {
                     pendingStatus.remove(uniqueId);
-                   // System.out.println("[LINK] ACK processed, removed from pending: " + uniqueId);
+                    //System.out.println("[LINK] ACK processed, removed from pending: " + uniqueId);
                 } else {
                     System.out.println("[LINK] ACK received but could not find pending message: " + uniqueId);
                 }

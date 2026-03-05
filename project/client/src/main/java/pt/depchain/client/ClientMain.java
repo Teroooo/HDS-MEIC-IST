@@ -45,14 +45,16 @@ public class ClientMain {
                     System.out.print("Enter string to append: ");
                     String text = scanner.nextLine();
 
+                    messageId++;
                     JsonObject payloadJson = new JsonObject();
                     payloadJson.addProperty("text", text);
                     payloadJson.addProperty("clientId", clientId);
+                    payloadJson.addProperty("messageId", messageId);
 
                     String payload = payloadJson.toString();
                     int[] replicas = {1,2,3,4};
 
-                    messageId++;
+                   
                     link.broadcastWithId(replicas, Message.Type.APPEND_STRING, payload, messageId);
 
                     System.out.println("Append request sent.");

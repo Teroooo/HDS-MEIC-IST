@@ -78,7 +78,7 @@ public class HotStuffConsensus {
         String payload = gson.toJson(hsMsg);
         link.send(Link.Type.NODE, leader, Message.Type.NEW_VIEW, payload);
         
-        System.out.println("[CONSENSUS] Node " + myId + " sent NEW_VIEW to leader " + leader);
+        //System.out.println("[CONSENSUS] Node " + myId + " sent NEW_VIEW to leader " + leader);
     }
     
     /**
@@ -90,8 +90,8 @@ public class HotStuffConsensus {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         newViewMessages.put(msg.getSenderId(), hsMsg);
         
-        System.out.println("[CONSENSUS] Leader " + myId + " received NEW_VIEW from node " + msg.getSenderId() 
-                         + " (collected " + newViewMessages.size() + "/" + (n-f) + ")");
+        //System.out.println("[CONSENSUS] Leader " + myId + " received NEW_VIEW from node " + msg.getSenderId() 
+        //                 + " (collected " + newViewMessages.size() + "/" + (n-f) + ")");
         
         // Start PREPARE phase when we reach exactly (n-f) NEW_VIEW messages
         if (newViewMessages.size() == (n - f)) {
@@ -132,7 +132,7 @@ public class HotStuffConsensus {
         } else {
             // No pending commands, wait for client requests
             // In Step 3, we don't advance view without commands (no timeout yet)
-            System.out.println("[CONSENSUS] Leader " + myId + " waiting for commands in view " + viewNumber);
+            //System.out.println("[CONSENSUS] Leader " + myId + " waiting for commands in view " + viewNumber);
             return;
         }
         
@@ -140,7 +140,7 @@ public class HotStuffConsensus {
         currentProposal = new TreeNode(command, parent.getHash(), viewNumber);
         blockchain.addNode(currentProposal);
         
-        System.out.println("[CONSENSUS] Leader " + myId + " proposing: " + currentProposal);
+        //System.out.println("[CONSENSUS] Leader " + myId + " proposing: " + currentProposal);
         
         // Broadcast PREPARE message
         HotStuffMessage hsMsg = new HotStuffMessage();
@@ -161,7 +161,7 @@ public class HotStuffConsensus {
         TreeNode proposal = hsMsg.getProposal();
         QuorumCertificate justify = hsMsg.getQc();
         
-        System.out.println("[CONSENSUS] Node " + myId + " received PREPARE from leader " + msg.getSenderId() + ": " + proposal);
+        //System.out.println("[CONSENSUS] Node " + myId + " received PREPARE from leader " + msg.getSenderId() + ": " + proposal);
         
         blockchain.addNode(proposal);
         currentProposal = proposal;
@@ -178,9 +178,9 @@ public class HotStuffConsensus {
             String payload = gson.toJson(voteMsg);
             link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
             
-            System.out.println("[CONSENSUS] Node " + myId + " voted PREPARE for " + proposal);
+            //System.out.println("[CONSENSUS] Node " + myId + " voted PREPARE for " + proposal);
         } else {
-            System.out.println("[CONSENSUS] Node " + myId + " rejected PREPARE (safeNode failed)");
+            //System.out.println("[CONSENSUS] Node " + myId + " rejected PREPARE (safeNode failed)");
         }
     }
     
@@ -193,8 +193,8 @@ public class HotStuffConsensus {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         prepareVotes.put(msg.getSenderId(), hsMsg.getVoteSignature());
         
-        System.out.println("[CONSENSUS] Leader " + myId + " received PREPARE_VOTE from node " + msg.getSenderId()
-                         + " (collected " + prepareVotes.size() + "/" + (n-f) + ")");
+        //System.out.println("[CONSENSUS] Leader " + myId + " received PREPARE_VOTE from node " + msg.getSenderId()
+        //                 + " (collected " + prepareVotes.size() + "/" + (n-f) + ")");
         
         // Advance to next phase when we reach exactly (n-f) votes
         if (prepareVotes.size() == (n - f)) {
@@ -216,7 +216,7 @@ public class HotStuffConsensus {
             prepareQC.addVote(entry.getKey(), entry.getValue());
         }
         
-        System.out.println("[CONSENSUS] Leader " + myId + " created " + prepareQC);
+        // System.out.println("[CONSENSUS] Leader " + myId + " created " + prepareQC);
         
         // Broadcast PRE_COMMIT message
         HotStuffMessage hsMsg = new HotStuffMessage();
@@ -237,9 +237,9 @@ public class HotStuffConsensus {
         
         if (qc != null && qc.matches(QuorumCertificate.QCType.PREPARE, viewNumber)) {
             prepareQC = qc;
-            
-            System.out.println("[CONSENSUS] Node " + myId + " received valid PRE_COMMIT with " + qc);
-            
+
+            // System.out.println("[CONSENSUS] Node " + myId + " received valid PRE_COMMIT with " + qc);
+
             // Vote pre-commit
             byte[] voteSignature = crypto.sign(createVoteData(Message.Type.PRE_COMMIT_VOTE, qc.getNodeHash()));
             
@@ -249,8 +249,8 @@ public class HotStuffConsensus {
             
             String payload = gson.toJson(voteMsg);
             link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PRE_COMMIT_VOTE, payload);
-            
-            System.out.println("[CONSENSUS] Node " + myId + " voted PRE_COMMIT");
+
+            // System.out.println("[CONSENSUS] Node " + myId + " voted PRE_COMMIT");
         }
     }
     
@@ -263,8 +263,8 @@ public class HotStuffConsensus {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         preCommitVotes.put(msg.getSenderId(), hsMsg.getVoteSignature());
         
-        System.out.println("[CONSENSUS] Leader " + myId + " received PRE_COMMIT_VOTE from node " + msg.getSenderId()
-                         + " (collected " + preCommitVotes.size() + "/" + (n-f) + ")");
+        // System.out.println("[CONSENSUS] Leader " + myId + " received PRE_COMMIT_VOTE from node " + msg.getSenderId()
+        //                  + " (collected " + preCommitVotes.size() + "/" + (n-f) + ")");
         
         // Advance to next phase when we reach exactly (n-f) votes
         if (preCommitVotes.size() == (n - f)) {
@@ -286,7 +286,7 @@ public class HotStuffConsensus {
             precommitQC.addVote(entry.getKey(), entry.getValue());
         }
         
-        System.out.println("[CONSENSUS] Leader " + myId + " created " + precommitQC);
+        //System.out.println("[CONSENSUS] Leader " + myId + " created " + precommitQC);
         
         // Broadcast COMMIT message
         HotStuffMessage hsMsg = new HotStuffMessage();
@@ -309,7 +309,7 @@ public class HotStuffConsensus {
             // Lock on this QC (Line 25 of Algorithm 2)
             lockedQC = qc;
             
-            System.out.println("[CONSENSUS] Node " + myId + " locked on " + qc);
+            //System.out.println("[CONSENSUS] Node " + myId + " locked on " + qc);
             
             // Vote commit
             byte[] voteSignature = crypto.sign(createVoteData(Message.Type.COMMIT_VOTE, qc.getNodeHash()));
@@ -321,7 +321,7 @@ public class HotStuffConsensus {
             String payload = gson.toJson(voteMsg);
             link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.COMMIT_VOTE, payload);
             
-            System.out.println("[CONSENSUS] Node " + myId + " voted COMMIT");
+            //System.out.println("[CONSENSUS] Node " + myId + " voted COMMIT");
         }
     }
     
@@ -334,8 +334,8 @@ public class HotStuffConsensus {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         commitVotes.put(msg.getSenderId(), hsMsg.getVoteSignature());
         
-        System.out.println("[CONSENSUS] Leader " + myId + " received COMMIT_VOTE from node " + msg.getSenderId()
-                         + " (collected " + commitVotes.size() + "/" + (n-f) + ")");
+        //System.out.println("[CONSENSUS] Leader " + myId + " received COMMIT_VOTE from node " + msg.getSenderId()
+        //                 + " (collected " + commitVotes.size() + "/" + (n-f) + ")");
         
         // Advance to next phase when we reach exactly (n-f) votes
         if (commitVotes.size() == (n - f)) {
@@ -357,7 +357,7 @@ public class HotStuffConsensus {
             commitQC.addVote(entry.getKey(), entry.getValue());
         }
         
-        System.out.println("[CONSENSUS] Leader " + myId + " created " + commitQC);
+        //System.out.println("[CONSENSUS] Leader " + myId + " created " + commitQC);
         
         // Broadcast DECIDE message
         HotStuffMessage hsMsg = new HotStuffMessage();
@@ -385,7 +385,7 @@ public class HotStuffConsensus {
         if (commitQC != null && commitQC.matches(QuorumCertificate.QCType.COMMIT, viewNumber)) {
             TreeNode decidedNode = blockchain.getNode(commitQC.getNodeHash());
             
-            System.out.println("[CONSENSUS] *** Node " + myId + " DECIDED on: " + decidedNode + " ***");
+            //System.out.println("[CONSENSUS] *** Node " + myId + " DECIDED on: " + decidedNode + " ***");
             
             // Execute the committed branch
             blockchain.executeCommittedBranch(decidedNode);
@@ -446,7 +446,6 @@ public class HotStuffConsensus {
         pendingCommands.offer(new CommandRequest(command, clientId));
         System.out.println("[CONSENSUS] Node " + myId + " queued command from client " + clientId + ": \"" + command + "\"");
         
-
         // If this node is the leader and we have enough NEW_VIEW messages, try to propose
         if (isLeader() && newViewMessages.size() >= (n - f)) {
             runPreparePhase();

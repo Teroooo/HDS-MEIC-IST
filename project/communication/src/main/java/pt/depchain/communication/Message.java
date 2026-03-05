@@ -17,7 +17,12 @@ public class Message implements Serializable {
     private byte[] signature;
 
     public enum Type {
-        APPEND_STRING, ACK
+        APPEND_STRING, ACK,
+        // HotStuff protocol messages
+        NEW_VIEW, PREPARE, PREPARE_VOTE,
+        PRE_COMMIT, PRE_COMMIT_VOTE,
+        COMMIT, COMMIT_VOTE,
+        DECIDE
     }
 
     public Message(int senderId, Type type) {

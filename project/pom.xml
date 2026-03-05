@@ -13,6 +13,7 @@
         <module>service</module>
         <module>client</module>
         <module>crypto</module>
+        <module>hotstuff</module>
     </modules>
 
      <properties>

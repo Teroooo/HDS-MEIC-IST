@@ -3,6 +3,7 @@ package pt.depchain.client;
 import pt.depchain.communication.*;
 import java.net.*;
 import java.util.Scanner;
+import com.google.gson.JsonObject;
 
 public class ClientMain {
     public static void main(String[] args) throws Exception {
@@ -12,7 +13,7 @@ public class ClientMain {
         }  
 
         int clientId = Integer.parseInt(args[0]);
-
+        int messageId = 0; 
         Link link = new Link(clientId, Link.Type.CLIENT, "../config/membership.json", "../config/client" + clientId + ".priv", "../config/client" + clientId + ".pub");
 
         new Thread(() -> {
@@ -44,9 +45,16 @@ public class ClientMain {
                     System.out.print("Enter string to append: ");
                     String text = scanner.nextLine();
 
-                    for (int i = 1; i <= 4; i++) {
-                        link.send(Link.Type.NODE, i, Message.Type.APPEND_STRING, text);
-                    }
+                    JsonObject payloadJson = new JsonObject();
+                    payloadJson.addProperty("text", text);
+                    payloadJson.addProperty("clientId", clientId);
+
+                    String payload = payloadJson.toString();
+                    int[] replicas = {1,2,3,4};
+
+                    messageId++;
+                    link.broadcastWithId(replicas, Message.Type.APPEND_STRING, payload, messageId);
+
                     System.out.println("Append request sent.");
                     break;
 

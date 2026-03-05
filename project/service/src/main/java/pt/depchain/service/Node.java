@@ -6,6 +6,8 @@ import pt.depchain.hotstuff.*;
 import java.net.*;
 import java.util.HashMap;
 import java.util.Map;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 public class Node {
     
@@ -107,16 +109,25 @@ public class Node {
 
     private static void handleAppendRequest(Link link, int nodeId, Message msg) throws Exception {
         String command = msg.getPayload();
-        int clientId = msg.getSenderId();
-        
-        System.out.println("[NODE] Node " + nodeId + " received APPEND request from client " + clientId + ": \"" + command + "\"");
-        
+        JsonObject payloadJson = JsonParser.parseString(msg.getPayload()).getAsJsonObject();
+        int clientId = payloadJson.get("clientId").getAsInt();
+        int messageId = msg.getMessageId();
+        String stringToAppend = payloadJson.get("text").getAsString();
+
+        System.out.println("[NODE] Node " + nodeId + " received APPEND request from client " + clientId + ": \"" + stringToAppend + "\"");
+
         // If this node is the leader, queue the command
+        String key = clientId + "-" + messageId;
+        System.out.println("[NODE] Checking for duplicate command with key: " + key);
+        if (pendingClientRequests.containsKey(key)) {
+            System.out.println("[NODE] Duplicate command from client " + clientId + ", ignoring.");
+            return;
+        }
+
         if (consensus.isLeader()) {
-            consensus.addCommand(command, clientId);
-            
+            consensus.addCommand(stringToAppend, clientId);
+    
             // Track which client sent this command (for future response)
-            String key = command + "-" + System.currentTimeMillis();
             pendingClientRequests.put(key, clientId);
         } else {
             // Forward to current leader

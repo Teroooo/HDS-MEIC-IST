@@ -105,7 +105,6 @@ public class HotStuffConsensus {
     private void runPreparePhase() throws Exception {
         if (!isLeader()) return;
         
-        System.out.println("[CONSENSUS] Leader " + myId + " running PREPARE phase for view " + viewNumber);
         
         // Find highQC (highest QC among NEW_VIEW messages)
         QuorumCertificate highQC = null;
@@ -137,6 +136,7 @@ public class HotStuffConsensus {
             return;
         }
         
+        System.out.println("[CONSENSUS] Leader " + myId + " running PREPARE phase for view " + viewNumber);
         currentProposal = new TreeNode(command, parent.getHash(), viewNumber);
         blockchain.addNode(currentProposal);
         
@@ -446,6 +446,7 @@ public class HotStuffConsensus {
         pendingCommands.offer(new CommandRequest(command, clientId));
         System.out.println("[CONSENSUS] Node " + myId + " queued command from client " + clientId + ": \"" + command + "\"");
         
+
         // If this node is the leader and we have enough NEW_VIEW messages, try to propose
         if (isLeader() && newViewMessages.size() >= (n - f)) {
             runPreparePhase();

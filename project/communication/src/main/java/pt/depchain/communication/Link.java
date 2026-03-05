@@ -128,8 +128,8 @@ public class Link {
 
         byte[] data = gson.toJson(msg).getBytes();
         
-        String uniqueId = makeUniqueId(myId, localMsgId);
-        pending.put(uniqueId, new Object[]{msg, destType}); 
+        String uniqueId = makeUniqueId(myId, localMsgId, destType);
+        pending.put(uniqueId, new Object[]{msg, destType});
         pendingStatus.put(uniqueId, System.currentTimeMillis());
 
         InetSocketAddress dest;
@@ -138,7 +138,7 @@ public class Link {
         } else {
             dest = nodeAddresses.get(destId);
         }
-        System.out.println("Sending message to " + destType + " " + destId + " at " + dest);
+        //System.out.println("Sending message to " + destType + " " + destId + " at " + dest);
         socket.send(new DatagramPacket(data, data.length, dest.getAddress(), dest.getPort()));
     }
 
@@ -187,14 +187,25 @@ public class Link {
 
             // Handle ACKs
             if (msg.getType() == Message.Type.ACK) {
-                String uniqueId = makeUniqueId(msg.getSenderId(), msg.getMessageId());
-                pending.remove(uniqueId);
-                pendingStatus.remove(uniqueId);
+                int originalSenderId = msg.getReceiver(); 
+                Type type = senderType.equals("CLIENT") ? Type.CLIENT : Type.NODE;
+                String uniqueId = makeUniqueId(originalSenderId, msg.getMessageId(), type);
+                if (pending.remove(uniqueId) != null) {
+                    pendingStatus.remove(uniqueId);
+                    //System.out.println("[LINK] ACK processed, removed from pending: " + uniqueId);
+                } else {
+                    System.out.println("[LINK] ACK received but could not find pending message: " + uniqueId);
+                }
                 continue; 
             }
 
-            String uniqueId = makeUniqueId(msg.getSenderId(), msg.getMessageId());
-            if (delivered.contains(uniqueId)) continue;
+            Type senderTypeEnum = senderType.equals("CLIENT") ? Type.CLIENT : Type.NODE;
+            String uniqueId = makeUniqueId(msg.getSenderId(), msg.getMessageId(), senderTypeEnum);
+            if (delivered.contains(uniqueId)) {
+                // System.out.println("[LINK] Duplicate received, ignoring: " + uniqueId 
+                //     + " type=" + msg.getType() + " from " + msg.getSenderId());
+                continue;
+            }
             delivered.add(uniqueId);
 
             Message ack = new Message(myId, Message.Type.ACK);
@@ -213,7 +224,7 @@ public class Link {
         }
     }
 
-    private String makeUniqueId(int senderId, int messageId) {
-        return senderId + "-" + messageId;
+    private String makeUniqueId(int senderId, int messageId, Type senderType) {
+        return senderType + "-" + senderId + "-" + messageId;
     }
 }

@@ -40,13 +40,13 @@ public class ClientMain {
             switch (choice) {
 
                 case "1":
-                    System.out.print("Enter node ID: ");
-                    int nodeId = Integer.parseInt(scanner.nextLine());
-
+                           
                     System.out.print("Enter string to append: ");
                     String text = scanner.nextLine();
 
-                    link.send(Link.Type.NODE, nodeId, Message.Type.APPEND_STRING, text);
+                    for (int i = 1; i <= 4; i++) {
+                        link.send(Link.Type.NODE, i, Message.Type.APPEND_STRING, text);
+                    }
                     System.out.println("Append request sent.");
                     break;
 

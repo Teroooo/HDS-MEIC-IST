@@ -102,7 +102,7 @@ public class HotStuffConsensus {
         
         // Start PREPARE phase when we reach exactly (n-f) NEW_VIEW messages
         System.out.println("Current NEW_VIEW messages: " + newViewMessages.size());
-        if (newViewMessages.size() == (n - f)) {
+        if (isLeader() && newViewMessages.size() >= (n - f)) {
             System.out.println("Entrei aqui2");
             runPreparePhase();
         }
@@ -407,16 +407,16 @@ public class HotStuffConsensus {
             currentProposal = null;
             //System.out.println("cleared current proposal");
             
-            // Invoke callback
-            if (decideCallback != null) {
-                decideCallback.onDecide(decidedNode, viewNumber);
-            }
-
             if (isLeader()) {
                 newViewMessages.clear();   // only leader resets collection
             }
-            // Move to next view
+
             viewNumber++;
+            // Invoke callback
+            if (decideCallback != null) {
+                decideCallback.onDecide(decidedNode,  viewNumber - 1);
+            }
+            // Move to next view
             Thread.sleep(100); // Small delay before starting next view
             startView();
         }

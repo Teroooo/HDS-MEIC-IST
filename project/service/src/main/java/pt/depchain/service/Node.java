@@ -230,8 +230,8 @@ public class Node {
                 String text = payloadJson.get("text").getAsString();
 
                 // Add it to consensus to propose
-                consensus.addCommand(text, clientId + "-" + messageId);
                 System.out.println("[NODE] Node " + nodeId + " (new leader) proposing pending command " + key);
+                consensus.addCommand(text, clientId + "-" + messageId);
                 startPacemaker(link, nodeId);
                 break; // propose one command at a time per view
             }

@@ -102,7 +102,7 @@ public class HotStuffConsensus {
         
         // Start PREPARE phase when we reach exactly (n-f) NEW_VIEW messages
         System.out.println("Current NEW_VIEW messages: " + newViewMessages.size());
-        if (isLeader() && newViewMessages.size() >= (n - f)) {
+        if (isLeader() && newViewMessages.size() == (n - f)) {
             System.out.println("Entrei aqui2");
             runPreparePhase();
         }

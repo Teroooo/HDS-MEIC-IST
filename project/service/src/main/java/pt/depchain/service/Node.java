@@ -21,7 +21,7 @@ public class Node {
     
     private static HotStuffConsensus consensus;
     private static Blockchain blockchain;
-    private static Map<String, Integer> pendingClientRequests = new HashMap<>();
+    private static Map<String, RequestState> pendingClientRequests = new HashMap<>();
     
     private static final ScheduledExecutorService pacemaker = Executors.newSingleThreadScheduledExecutor();
     private static ScheduledFuture<?> timeoutTask; // <--- Add this line
@@ -29,6 +29,11 @@ public class Node {
     private static boolean isTimerRunning = false;
 
     private static Map<String, Message> activeRequestsBuffer = new LinkedHashMap<>();
+
+    enum RequestState {
+        PENDING,
+        COMPLETED
+    }
 
     private static void startPacemaker(Link link, int nodeId) {
         if (isTimerRunning) return; // Don't restart if already waiting for a proposal
@@ -44,9 +49,7 @@ public class Node {
                 consensus.advanceView(); 
 
                 if (consensus.isLeader()) {
-                    for (Message bufferedMsg : activeRequestsBuffer.values()) {
-                        handleAppendRequest(link, nodeId, bufferedMsg);
-                    }
+                    proposePendingCommandsIfLeader(link, nodeId); 
                 }
 
                 // Note: We don't start the timer again yet. 
@@ -90,10 +93,24 @@ public class Node {
             stopPacemaker(); // Stop the timer
             System.out.println("[NODE] Decision reached at view " + view);
             System.out.println(blockchain.getBlockchainState());
-            
-            String committedCommand = decidedNode.getCommand();
-            activeRequestsBuffer.entrySet().removeIf(entry -> 
-            entry.getValue().getPayload().contains(committedCommand));
+
+            String requestKey = decidedNode.getRequestKey();
+            Message completedMsg = activeRequestsBuffer.remove(requestKey);
+            if (completedMsg != null) {
+                pendingClientRequests.put(requestKey, RequestState.COMPLETED);
+                System.out.println("[NODE] Request " + requestKey + " completed: " + decidedNode.getCommand());
+            } else {
+                System.out.println("[NODE] Decided command " + requestKey + " not found in pending buffer");
+            }
+
+            try {
+                if (consensus.isLeader()) {
+                    proposePendingCommandsIfLeader(link, nodeId);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+      
             // Notify clients (in future implementation)
             // For now, just log the decision
         });
@@ -120,9 +137,8 @@ public class Node {
                 handleAppendRequest(link, nodeId, msg);
                 break;
             
-            // HotStuff protocol messages
             case NEW_VIEW:
-                consensus.handleNewView(msg);
+                handleNewView(link, nodeId, msg);
                 break;
                 
             case PREPARE:
@@ -158,27 +174,14 @@ public class Node {
         }
     }
 
+    private static void handleNewView(Link link, int nodeId, Message msg) throws Exception {
+        consensus.handleNewView(msg);
+        // if (consensus.isLeader()) {
+        //     proposePendingCommandsIfLeader(link, nodeId);
+        // }     
+    }
+
     private static void handleAppendRequest(Link link, int nodeId, Message msg) throws Exception {
-        // client manda mensagem
-        // 1-1-1
-        // 1-1-2
-        // 1-1-3
-        // 1-1-4
-
-        // Réplicas enviam new view
-        // 2-1
-        // 3-1
-        // 4-1
-
-        // Réplicas recebem
-        
-        // Depois Réplicas mandam para o lider
-        // 2-2
-        // 3-2
-        // 4-2
-
-
-
         String command = msg.getPayload();
         JsonObject payloadJson = JsonParser.parseString(msg.getPayload()).getAsJsonObject();
         int clientId = payloadJson.get("clientId").getAsInt();
@@ -189,28 +192,49 @@ public class Node {
 
         // If this node is the leader, queue the command
         String key = clientId + "-" + messageId;
+
+        RequestState state = pendingClientRequests.get(key);
         //System.out.println("[NODE] Checking for duplicate command with key: " + key);
-        if (pendingClientRequests.containsKey(key)) {
-            System.out.println("[NODE] Duplicate command from client " + clientId + ", ignoring.");
+        if (state == RequestState.COMPLETED) {
+            System.out.println("[NODE] Request already completed, ignoring.");
             return;
         }
-        else{
+        if (state == null) {
+            pendingClientRequests.put(key, RequestState.PENDING);
             activeRequestsBuffer.put(key, msg);
+            System.out.println("[NODE] New request added to pending buffer with key: " + key);
+            if (consensus.isLeader()) {
+                consensus.addCommand(stringToAppend, key);
+                startPacemaker(link, nodeId);
+            } else {
+                int leaderId = ((consensus.getViewNumber() - 1) % 4) + 1;
+                link.send(Link.Type.NODE, leaderId, Message.Type.APPEND_STRING, command);
+                startPacemaker(link, nodeId);
+                System.out.println("[NODE] Request forwarded. Pacemaker started.");
+            }
+            // store command in consensus queue for ALL replicas
         }
+    }
 
-        if (consensus.isLeader()) {
-            consensus.addCommand(stringToAppend, clientId);
-    
-            // Track which client sent this command (for future response)
-            pendingClientRequests.put(key, clientId);
-            startPacemaker(link, nodeId);
-        } else {
-            // Forward to current leader
-            int leaderId = ((consensus.getViewNumber() - 1) % 4) + 1;
-            //System.out.println("[NODE] Node " + nodeId + " forwarding request to leader " + leaderId);
-            link.send(Link.Type.NODE, leaderId, Message.Type.APPEND_STRING, command);
-            startPacemaker(link, nodeId); 
-            System.out.println("[NODE] Request forwarded. Pacemaker started.");
+    private static void proposePendingCommandsIfLeader(Link link, int nodeId) throws Exception {
+
+        // Look for the first pending command
+        for (Map.Entry<String, Message> entry : activeRequestsBuffer.entrySet()) {
+            String key = entry.getKey();
+            RequestState state = pendingClientRequests.get(key);
+
+            if (state == RequestState.PENDING) {
+                JsonObject payloadJson = JsonParser.parseString(entry.getValue().getPayload()).getAsJsonObject();
+                int clientId = payloadJson.get("clientId").getAsInt();
+                int messageId = payloadJson.get("messageId").getAsInt();
+                String text = payloadJson.get("text").getAsString();
+
+                // Add it to consensus to propose
+                consensus.addCommand(text, clientId + "-" + messageId);
+                System.out.println("[NODE] Node " + nodeId + " (new leader) proposing pending command " + key);
+                startPacemaker(link, nodeId);
+                break; // propose one command at a time per view
+            }
         }
     }
 }

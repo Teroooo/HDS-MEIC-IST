@@ -18,6 +18,7 @@ public class TreeNode implements Serializable {
     private final int viewNumber;
     private byte[] hash;
     private List<TreeNode> children;
+    private final String requestKey;
     
     // Root node constructor
     public TreeNode() {
@@ -26,11 +27,13 @@ public class TreeNode implements Serializable {
         this.viewNumber = 0;
         this.children = new ArrayList<>();
         this.hash = computeHash();
+        this.requestKey = "GENESIS";
     }
     
     // Regular node constructor
-    public TreeNode(String command, byte[] parentHash, int viewNumber) {
+    public TreeNode(String command, String requestKey, byte[] parentHash, int viewNumber) {
         this.command = command;
+        this.requestKey = requestKey;
         this.parentHash = parentHash;
         this.viewNumber = viewNumber;
         this.children = new ArrayList<>();
@@ -53,6 +56,10 @@ public class TreeNode implements Serializable {
         return hash;
     }
     
+    public String getRequestKey() {
+        return requestKey;
+    }
+
     public List<TreeNode> getChildren() {
         return children;
     }

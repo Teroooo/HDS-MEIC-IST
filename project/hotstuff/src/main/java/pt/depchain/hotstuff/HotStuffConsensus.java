@@ -28,7 +28,7 @@ public class HotStuffConsensus {
     private QuorumCertificate prepareQC;
     private QuorumCertificate lockedQC;
     private TreeNode currentProposal;
-    
+
     // Vote collection for current view
     private final Map<Integer, HotStuffMessage> newViewMessages = new ConcurrentHashMap<>();
     private final Map<Integer, byte[]> prepareVotes = new ConcurrentHashMap<>();
@@ -48,12 +48,7 @@ public class HotStuffConsensus {
         this.startView();
         
         // If I am the NEW leader, check if I have commands to propose immediately
-        if (isLeader() && !pendingCommands.isEmpty()) {
-            // This handles commands forwarded to me while the old leader was dying
-            if (newViewMessages.size() >= (n - f)) {
-                runPreparePhase();
-            }
-        }
+             
     }
     
     public HotStuffConsensus(int myId, int n, int f, Link link, CryptoLibrary crypto, Blockchain blockchain) {
@@ -79,7 +74,6 @@ public class HotStuffConsensus {
         System.out.println("[CONSENSUS] Node " + myId + " starting view " + viewNumber);
         
         // Clear vote collection from previous view
-        newViewMessages.clear();
         prepareVotes.clear();
         preCommitVotes.clear();
         commitVotes.clear();
@@ -93,15 +87,13 @@ public class HotStuffConsensus {
         String payload = gson.toJson(hsMsg);
         link.send(Link.Type.NODE, leader, Message.Type.NEW_VIEW, payload);
         
-        //System.out.println("[CONSENSUS] Node " + myId + " sent NEW_VIEW to leader " + leader);
+        System.out.println("[CONSENSUS] Node " + myId + " sent NEW_VIEW to leader " + leader);
     }
     
     /**
      * Handle incoming NEW_VIEW message (leader only)
      */
     public void handleNewView(Message msg) throws Exception {
-        if (!isLeader()) return;
-        
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         newViewMessages.put(msg.getSenderId(), hsMsg);
         
@@ -109,7 +101,9 @@ public class HotStuffConsensus {
         //                 + " (collected " + newViewMessages.size() + "/" + (n-f) + ")");
         
         // Start PREPARE phase when we reach exactly (n-f) NEW_VIEW messages
+        System.out.println("Current NEW_VIEW messages: " + newViewMessages.size());
         if (newViewMessages.size() == (n - f)) {
+            System.out.println("Entrei aqui2");
             runPreparePhase();
         }
     }
@@ -119,8 +113,7 @@ public class HotStuffConsensus {
      */
     private void runPreparePhase() throws Exception {
         if (!isLeader()) return;
-        
-        
+
         // Find highQC (highest QC among NEW_VIEW messages)
         QuorumCertificate highQC = null;
         for (HotStuffMessage msg : newViewMessages.values()) {
@@ -138,25 +131,25 @@ public class HotStuffConsensus {
         } else {
             parent = blockchain.getLastCommittedNode();
         }
-        
-        // Get command from queue (or wait if none pending)
-        CommandRequest cmdReq = pendingCommands.poll();
-        String command;
-        if (cmdReq != null) {
-            command = cmdReq.command;
+        System.out.println("alo3");
+        System.out.println("currentProposal: " + currentProposal);
+        if (currentProposal != null) {
+            // Re-propose the previous proposal (crash recovery)
+            pendingCommands.removeIf(cmd -> cmd.requestKey.equals(currentProposal.getRequestKey()));
+            System.out.println("[CONSENSUS] Re-proposing previous proposal: " + currentProposal);
         } else {
-            // No pending commands, wait for client requests
-            // In Step 3, we don't advance view without commands (no timeout yet)
-            //System.out.println("[CONSENSUS] Leader " + myId + " waiting for commands in view " + viewNumber);
-            return;
+            // Take a new command from the pending queue
+            CommandRequest cmdReq = pendingCommands.poll();
+            if (cmdReq == null) {
+                System.out.println("[CONSENSUS] No commands to propose, waiting...");
+                return; // nothing to propose
+            }
+            currentProposal = new TreeNode(cmdReq.command, cmdReq.requestKey, parent.getHash(), viewNumber);
+            blockchain.addNode(currentProposal);
         }
         
         System.out.println("[CONSENSUS] Leader " + myId + " running PREPARE phase for view " + viewNumber);
-        currentProposal = new TreeNode(command, parent.getHash(), viewNumber);
-        blockchain.addNode(currentProposal);
-        
-        //System.out.println("[CONSENSUS] Leader " + myId + " proposing: " + currentProposal);
-        
+                
         // Broadcast PREPARE message
         HotStuffMessage hsMsg = new HotStuffMessage();
         hsMsg.setProposal(currentProposal);
@@ -241,6 +234,9 @@ public class HotStuffConsensus {
         for (int nodeId = 1; nodeId <= n; nodeId++) {
             link.send(Link.Type.NODE, nodeId, Message.Type.PRE_COMMIT, payload);
         }
+        // System.out.println("[TEST] Sleeping for 2 seconds before Commit. Kill this process now to simulate crash.");
+        // Thread.sleep(2000);
+        // System.out.println("[TEST] Woke up, now sending Commit. If you killed the process before, this won't happen.");
     }
     
     /**
@@ -311,6 +307,9 @@ public class HotStuffConsensus {
         for (int nodeId = 1; nodeId <= n; nodeId++) {
             link.send(Link.Type.NODE, nodeId, Message.Type.COMMIT, payload);
         }
+        // System.out.println("[TEST] Sleeping for 2 seconds before DECIDE. Kill this process now to simulate crash.");
+        // Thread.sleep(2000);
+        // System.out.println("[TEST] Woke up, now sending DECIDE. If you killed the process before, this won't happen.");
     }
     
     /**
@@ -405,11 +404,17 @@ public class HotStuffConsensus {
             // Execute the committed branch
             blockchain.executeCommittedBranch(decidedNode);
             
+            currentProposal = null;
+            //System.out.println("cleared current proposal");
+            
             // Invoke callback
             if (decideCallback != null) {
                 decideCallback.onDecide(decidedNode, viewNumber);
             }
-            
+
+            if (isLeader()) {
+                newViewMessages.clear();   // only leader resets collection
+            }
             // Move to next view
             viewNumber++;
             Thread.sleep(100); // Small delay before starting next view
@@ -457,12 +462,13 @@ public class HotStuffConsensus {
     /**
      * Add a command to the pending queue (called when client sends request)
      */
-    public void addCommand(String command, int clientId) throws Exception {
-        pendingCommands.offer(new CommandRequest(command, clientId));
-        System.out.println("[CONSENSUS] Node " + myId + " queued command from client " + clientId + ": \"" + command + "\"");
-        
+    public void addCommand(String command, String requestKey) throws Exception {
+        pendingCommands.offer(new CommandRequest(command, requestKey));
+        System.out.println("[CONSENSUS] Node " + myId + " queued command with key " + requestKey + ": \"" + command + "\"");
+
         // If this node is the leader and we have enough NEW_VIEW messages, try to propose
         if (isLeader() && newViewMessages.size() >= (n - f)) {
+            System.out.println("Entrei aqui");
             runPreparePhase();
         }
     }
@@ -485,16 +491,19 @@ public class HotStuffConsensus {
         void onDecide(TreeNode decidedNode, int view) throws Exception;
     }
     
+    
     /**
      * Internal class to track command requests
      */
+  
     private static class CommandRequest {
         final String command;
-        final int clientId;
-        
-        CommandRequest(String command, int clientId) {
+        final String requestKey;
+
+        CommandRequest(String command, String requestKey) {
             this.command = command;
-            this.clientId = clientId;
+            this.requestKey = requestKey;
         }
     }
+
 }

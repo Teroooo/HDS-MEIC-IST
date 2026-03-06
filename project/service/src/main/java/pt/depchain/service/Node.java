@@ -5,7 +5,15 @@ import pt.depchain.crypto.CryptoLibrary;
 import pt.depchain.hotstuff.*;
 import java.net.*;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -15,6 +23,45 @@ public class Node {
     private static Blockchain blockchain;
     private static Map<String, Integer> pendingClientRequests = new HashMap<>();
     
+    private static final ScheduledExecutorService pacemaker = Executors.newSingleThreadScheduledExecutor();
+    private static ScheduledFuture<?> timeoutTask; // <--- Add this line
+    private static final long VIEW_TIMEOUT_MS = 10000;
+    private static boolean isTimerRunning = false;
+
+    private static Map<String, Message> activeRequestsBuffer = new LinkedHashMap<>();
+
+    private static void startPacemaker(Link link, int nodeId) {
+        if (isTimerRunning) return; // Don't restart if already waiting for a proposal
+        
+        isTimerRunning = true;
+        if (timeoutTask != null) timeoutTask.cancel(false);
+
+        timeoutTask = pacemaker.schedule(() -> {
+            try {
+                System.out.println("[PACEMAKER] View " + consensus.getViewNumber() + 
+                                   " timed out after request. Leader is likely dead.");
+                isTimerRunning = false;
+                consensus.advanceView(); 
+
+                if (consensus.isLeader()) {
+                    for (Message bufferedMsg : activeRequestsBuffer.values()) {
+                        handleAppendRequest(link, nodeId, bufferedMsg);
+                    }
+                }
+
+                // Note: We don't start the timer again yet. 
+                // We wait for the next request or retry to trigger it in the new view.
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }, VIEW_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private static void stopPacemaker() {
+        if (timeoutTask != null) timeoutTask.cancel(false);
+        isTimerRunning = false;
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
             System.err.println("Usage: java Node <nodeId>");
@@ -40,9 +87,13 @@ public class Node {
         
         // Set up callback for when consensus decides
         consensus.setDecideCallback((decidedNode, view) -> {
+            stopPacemaker(); // Stop the timer
             System.out.println("[NODE] Decision reached at view " + view);
             System.out.println(blockchain.getBlockchainState());
             
+            String committedCommand = decidedNode.getCommand();
+            activeRequestsBuffer.entrySet().removeIf(entry -> 
+            entry.getValue().getPayload().contains(committedCommand));
             // Notify clients (in future implementation)
             // For now, just log the decision
         });
@@ -143,17 +194,23 @@ public class Node {
             System.out.println("[NODE] Duplicate command from client " + clientId + ", ignoring.");
             return;
         }
+        else{
+            activeRequestsBuffer.put(key, msg);
+        }
 
         if (consensus.isLeader()) {
             consensus.addCommand(stringToAppend, clientId);
     
             // Track which client sent this command (for future response)
             pendingClientRequests.put(key, clientId);
+            startPacemaker(link, nodeId);
         } else {
             // Forward to current leader
             int leaderId = ((consensus.getViewNumber() - 1) % 4) + 1;
             //System.out.println("[NODE] Node " + nodeId + " forwarding request to leader " + leaderId);
             link.send(Link.Type.NODE, leaderId, Message.Type.APPEND_STRING, command);
+            startPacemaker(link, nodeId); 
+            System.out.println("[NODE] Request forwarded. Pacemaker started.");
         }
     }
 }

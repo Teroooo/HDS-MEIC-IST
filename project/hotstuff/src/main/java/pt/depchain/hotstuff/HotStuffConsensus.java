@@ -40,6 +40,21 @@ public class HotStuffConsensus {
     
     // Callback for when consensus decides
     private DecideCallback decideCallback;
+
+    public void advanceView() throws Exception {
+        this.viewNumber++;
+        // ... clear maps ...
+        
+        this.startView();
+        
+        // If I am the NEW leader, check if I have commands to propose immediately
+        if (isLeader() && !pendingCommands.isEmpty()) {
+            // This handles commands forwarded to me while the old leader was dying
+            if (newViewMessages.size() >= (n - f)) {
+                runPreparePhase();
+            }
+        }
+    }
     
     public HotStuffConsensus(int myId, int n, int f, Link link, CryptoLibrary crypto, Blockchain blockchain) {
         this.myId = myId;

@@ -104,8 +104,18 @@ public class Node {
             }
 
             try {
-                if (consensus.isLeader()) {
-                    proposePendingCommandsIfLeader(link, nodeId);
+                boolean hasPending = pendingClientRequests.values()
+                                    .stream()
+                                    .anyMatch(s -> s == RequestState.PENDING);
+
+                if (hasPending) {
+                    if (consensus.isLeader()) {
+                        proposePendingCommandsIfLeader(link, nodeId);
+                    } else {
+                        // Wait for leader proposal
+                        startPacemaker(link, nodeId);
+                        System.out.println("[NODE] Pending requests exist. Waiting for leader proposal.");
+                    }
                 }
             } catch (Exception e) {
                 e.printStackTrace();

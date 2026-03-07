@@ -28,6 +28,7 @@ public class HotStuffConsensus {
     private QuorumCertificate prepareQC;
     private QuorumCertificate lockedQC;
     private TreeNode currentProposal;
+    private boolean prepareStarted = false;
 
     // Vote collection for current view
     private final Map<Integer, HotStuffMessage> newViewMessages = new ConcurrentHashMap<>();
@@ -37,14 +38,14 @@ public class HotStuffConsensus {
     
     // Command queue (for leader)
     private final Queue<CommandRequest> pendingCommands = new LinkedBlockingQueue<>();
-    
+
     // Callback for when consensus decides
     private DecideCallback decideCallback;
 
     public void advanceView() throws Exception {
         this.viewNumber++;
         // ... clear maps ...
-        
+        prepareStarted = false;
         this.startView();
         
         // If I am the NEW leader, check if I have commands to propose immediately
@@ -112,7 +113,9 @@ public class HotStuffConsensus {
      * PREPARE phase (leader proposes, replicas vote)
      */
     private void runPreparePhase() throws Exception {
-        if (!isLeader()) return;
+        if (!isLeader() || prepareStarted) return;
+
+        prepareStarted = true;
 
         // Find highQC (highest QC among NEW_VIEW messages)
         QuorumCertificate highQC = null;
@@ -141,6 +144,7 @@ public class HotStuffConsensus {
             // Take a new command from the pending queue
             CommandRequest cmdReq = pendingCommands.poll();
             if (cmdReq == null) {
+                prepareStarted = false;
                 System.out.println("[CONSENSUS] No commands to propose, waiting...");
                 return; // nothing to propose
             }
@@ -201,8 +205,8 @@ public class HotStuffConsensus {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         prepareVotes.put(msg.getSenderId(), hsMsg.getVoteSignature());
         
-        //System.out.println("[CONSENSUS] Leader " + myId + " received PREPARE_VOTE from node " + msg.getSenderId()
-        //                 + " (collected " + prepareVotes.size() + "/" + (n-f) + ")");
+        System.out.println("[CONSENSUS] Leader " + myId + " received PREPARE_VOTE from node " + msg.getSenderId()
+                        + " (collected " + prepareVotes.size() + "/" + (n-f) + ")");
         
         // Advance to next phase when we reach exactly (n-f) votes
         if (prepareVotes.size() == (n - f)) {

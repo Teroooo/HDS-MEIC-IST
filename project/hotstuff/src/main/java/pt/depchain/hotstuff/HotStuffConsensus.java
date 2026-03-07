@@ -401,9 +401,7 @@ public class HotStuffConsensus {
             
             //System.out.println("[CONSENSUS] *** Node " + myId + " DECIDED on: " + decidedNode + " ***");
             
-            // Execute the committed branch
-            blockchain.executeCommittedBranch(decidedNode);
-            
+            // Execute the committed branch            
             currentProposal = null;
             //System.out.println("cleared current proposal");
             

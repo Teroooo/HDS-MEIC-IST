@@ -92,6 +92,9 @@ public class Node {
         consensus.setDecideCallback((decidedNode, view) -> {
             stopPacemaker(); // Stop the timer
             System.out.println("[NODE] Decision reached at view " + view);
+
+            // Execute the committed branch
+            blockchain.executeCommittedBranch(decidedNode);
             System.out.println(blockchain.getBlockchainState());
 
             String requestKey = decidedNode.getRequestKey();

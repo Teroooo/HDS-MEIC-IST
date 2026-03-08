@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import pt.depchain.communication.Link;
 import pt.depchain.communication.Message;
 import pt.depchain.crypto.CryptoLibrary;
+import threshsig.SigShare;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,9 +33,9 @@ public class HotStuffConsensus {
 
     // Vote collection for current view
     private final Map<Integer, HotStuffMessage> newViewMessages = new ConcurrentHashMap<>();
-    private final Map<Integer, byte[]> prepareVotes = new ConcurrentHashMap<>();
-    private final Map<Integer, byte[]> preCommitVotes = new ConcurrentHashMap<>();
-    private final Map<Integer, byte[]> commitVotes = new ConcurrentHashMap<>();
+    private final Map<Integer, SigShare> prepareVotes = new ConcurrentHashMap<>();
+    private final Map<Integer, SigShare> preCommitVotes = new ConcurrentHashMap<>();
+    private final Map<Integer, SigShare> commitVotes = new ConcurrentHashMap<>();
     
     // Command queue (for leader)
     private final Queue<CommandRequest> pendingCommands = new LinkedBlockingQueue<>();
@@ -67,7 +68,7 @@ public class HotStuffConsensus {
     public void setDecideCallback(DecideCallback callback) {
         this.decideCallback = callback;
     }
-    
+
     /**
      * Start the consensus for a new view
      */
@@ -181,7 +182,7 @@ public class HotStuffConsensus {
         // Check if safe to accept (safeNode predicate)
         if (safeNode(proposal, justify)) {
             // Vote for this proposal
-            byte[] voteSignature = crypto.sign(createVoteData(Message.Type.PREPARE_VOTE, proposal.getHash()));
+            SigShare voteSignature = crypto.signShare(createVoteData(Message.Type.PREPARE_VOTE, proposal.getHash()));
             
             HotStuffMessage voteMsg = new HotStuffMessage();
             voteMsg.setNodeHash(proposal.getHash());
@@ -224,7 +225,7 @@ public class HotStuffConsensus {
         
         // Create prepareQC
         prepareQC = new QuorumCertificate(QuorumCertificate.QCType.PREPARE, viewNumber, currentProposal.getHash());
-        for (Map.Entry<Integer, byte[]> entry : prepareVotes.entrySet()) {
+        for (Map.Entry<Integer, SigShare> entry : prepareVotes.entrySet()) {
             prepareQC.addVote(entry.getKey(), entry.getValue());
         }
         
@@ -256,7 +257,7 @@ public class HotStuffConsensus {
             // System.out.println("[CONSENSUS] Node " + myId + " received valid PRE_COMMIT with " + qc);
 
             // Vote pre-commit
-            byte[] voteSignature = crypto.sign(createVoteData(Message.Type.PRE_COMMIT_VOTE, qc.getNodeHash()));
+            SigShare voteSignature = crypto.signShare(createVoteData(Message.Type.PRE_COMMIT_VOTE, qc.getNodeHash()));
             
             HotStuffMessage voteMsg = new HotStuffMessage();
             voteMsg.setNodeHash(qc.getNodeHash());
@@ -297,7 +298,7 @@ public class HotStuffConsensus {
         
         // Create precommitQC
         QuorumCertificate precommitQC = new QuorumCertificate(QuorumCertificate.QCType.PRE_COMMIT, viewNumber, currentProposal.getHash());
-        for (Map.Entry<Integer, byte[]> entry : preCommitVotes.entrySet()) {
+        for (Map.Entry<Integer, SigShare> entry : preCommitVotes.entrySet()) {
             precommitQC.addVote(entry.getKey(), entry.getValue());
         }
         
@@ -330,7 +331,7 @@ public class HotStuffConsensus {
             //System.out.println("[CONSENSUS] Node " + myId + " locked on " + qc);
             
             // Vote commit
-            byte[] voteSignature = crypto.sign(createVoteData(Message.Type.COMMIT_VOTE, qc.getNodeHash()));
+            SigShare voteSignature = crypto.signShare(createVoteData(Message.Type.COMMIT_VOTE, qc.getNodeHash()));
             
             HotStuffMessage voteMsg = new HotStuffMessage();
             voteMsg.setNodeHash(qc.getNodeHash());
@@ -371,7 +372,7 @@ public class HotStuffConsensus {
         
         // Create commitQC
         QuorumCertificate commitQC = new QuorumCertificate(QuorumCertificate.QCType.COMMIT, viewNumber, currentProposal.getHash());
-        for (Map.Entry<Integer, byte[]> entry : commitVotes.entrySet()) {
+        for (Map.Entry<Integer, SigShare> entry : commitVotes.entrySet()) {
             commitQC.addVote(entry.getKey(), entry.getValue());
         }
         

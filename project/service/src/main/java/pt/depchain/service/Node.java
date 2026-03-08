@@ -76,7 +76,8 @@ public class Node {
         // Initialize crypto and link
         CryptoLibrary crypto = new CryptoLibrary(
             "../config/node" + nodeId + ".priv",
-            "../config/node" + nodeId + ".pub"
+            "../config/node" + nodeId + ".pub",
+            nodeId
         );
         Link link = new Link(nodeId, Link.Type.NODE, "../config/membership.json", 
                             "../config/node" + nodeId + ".priv", 

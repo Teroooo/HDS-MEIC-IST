@@ -56,6 +56,11 @@ public class CryptoLibrary {
         }
     }
 
+    public CryptoLibrary(String privateKeyPath, String publicKeyPath) throws Exception {
+        this.privateKey = readPrivateKey(privateKeyPath);
+        this.publicKey = readPublicKey(publicKeyPath); 
+    }
+
     private void loadGroupKey() throws IOException {
         Gson gson = new Gson();
         String groupJsonStr = Files.readString(Paths.get("../config/groupKey.json"));

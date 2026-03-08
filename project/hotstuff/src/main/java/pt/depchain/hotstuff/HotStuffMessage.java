@@ -16,6 +16,7 @@ public class HotStuffMessage implements Serializable {
     private SigShare voteSignature;
     private byte[] nodeHash;
     private String clientCommand;
+    private int viewNumber;
     
     public HotStuffMessage() {
     }
@@ -58,5 +59,13 @@ public class HotStuffMessage implements Serializable {
     
     public void setClientCommand(String clientCommand) {
         this.clientCommand = clientCommand;
+    }
+
+    public int getViewNumber() {
+        return this.viewNumber;
+    }
+
+    public void setViewNumber(int viewNumber) {
+        this.viewNumber = viewNumber;
     }
 }

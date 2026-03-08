@@ -8,15 +8,11 @@ import com.google.gson.JsonElement;
 
 
 import java.net.*;
-import java.nio.charset.StandardCharsets;
 import java.io.*;
 import java.security.*;
 import java.util.*;
 import pt.depchain.crypto.CryptoLibrary;
-import threshsig.SigShare;
-
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArraySet;
 
 
 public class Link {
@@ -38,7 +34,10 @@ public class Link {
     public Link(int myId, Type myType, String membershipFile, String myPrivKey, String myPubKey) throws Exception {
         this.myId = myId;
         this.myType = myType;
-        this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey, myId);
+        if(myType == Type.NODE)
+            this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey, myId);
+        else
+            this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey);
 
         JsonArray root = JsonParser.parseReader(new FileReader(membershipFile)).getAsJsonArray();
         JsonObject membership = root.get(0).getAsJsonObject();
@@ -127,14 +126,10 @@ public class Link {
         msg.setPayload(payload);
         msg.setReceiver(destId);
 
-        //System.out.println("send: " + msg.toString());
-
         msg.setSignature(null);
-        byte[] bytesToSign = gson.toJson(msg.getSeedMap()).getBytes(StandardCharsets.UTF_8);
-        msg.setSignature(cryptoLibrary.signShare(bytesToSign));
+        msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
 
         byte[] data = gson.toJson(msg).getBytes();
-        //System.out.println("Data to send: " + new String(data));
         
         String uniqueId = makeUniqueId(myId, localMsgId, destType);
         pending.put(uniqueId, new Object[]{msg, destType});
@@ -146,19 +141,14 @@ public class Link {
         } else {
             dest = nodeAddresses.get(destId);
         }
-        if(myId == 3 && destId == 1) {
-            System.out.println("Sending message to " + destType + " " + destId + " at " + dest);
-        }
+        //System.out.println("Sending message to " + destType + " " + destId + " at " + dest);
         socket.send(new DatagramPacket(data, data.length, dest.getAddress(), dest.getPort()));
     }
 
-    // Map to collect sigshares for each unique message
-    private final Map<String, Map<Integer, SigShare>> sigShareBuffer = new ConcurrentHashMap<>();
-    
     public Message receive() throws Exception {
         byte[] buffer = new byte[65536];
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-
+        
         while (true) {
             socket.receive(packet);
 
@@ -189,90 +179,59 @@ public class Link {
             String json = new String(packet.getData(), 0, packet.getLength());
             Message msg = gson.fromJson(json, Message.class);
 
-            if(msg.getType() != Message.Type.ACK) {
-                SigShare signature = msg.getSignature();
-                msg.setSignature(null);
-                //System.out.println("Received message: " + msg.toString() + " from " + senderType + " " + senderId);
-                String sigKey = msg.getType() + ":" + msg.getMessageId();
-                
-                // 1. Get or create the inner map for this specific message
-                Map<Integer, SigShare> sharesMap = sigShareBuffer.computeIfAbsent(sigKey, 
-                    k -> new ConcurrentHashMap<>());
 
-                // 2. Add the share using the Node ID as the key
-                // This automatically overwrites or ignores duplicates from the same node
-                sharesMap.put(signature.getId(), signature);
-
-                            // Only verify/process if we have at least k shares
-                if (sharesMap.size() >= cryptoLibrary.k) {
-                    SigShare[] sigSharesArray = sharesMap.values().toArray(new SigShare[0]); 
-                    try {
-                        byte[] bytesToVerify = gson.toJson(msg.getSeedMap()).getBytes(StandardCharsets.UTF_8);
-                        /*System.out.println("entrou aqui: " + new String(jsonToVerify.getBytes()));
-                        
-                        for(SigShare s : sigSharesArray) {
-                            System.out.println("Share from node " + s);
-                        }*/
-                        if (!cryptoLibrary.verifyShare(bytesToVerify, sigSharesArray)) {
-                            System.out.println("Threshold signature verification FAILED for " + sigKey);
-                            sigShareBuffer.remove(sigKey);
-                            continue;
-                        }
-                    } catch (Exception ex) {
-                        System.out.println("Threshold signature verification error: " + ex.getMessage());
-                        sigShareBuffer.remove(sigKey);
-                        continue;
-                    }
-                    sigShareBuffer.remove(sigKey); // Clean up after verification
-                }
+            byte[] signature = msg.getSignature();
+            msg.setSignature(null);
+            String jsonToVerify = gson.toJson(msg);
+            if (!cryptoLibrary.verify(jsonToVerify.getBytes(), signature, String.valueOf((senderType + "-" + senderId)))) {
+                System.out.println("Signature verification FAILED from " + senderType + " " + senderId);
+                continue;
             }
 
-                // Handle ACKs
-                if (msg.getType() == Message.Type.ACK) {
-                    int originalSenderId = msg.getReceiver(); 
-                    Type type = senderType.equals("CLIENT") ? Type.CLIENT : Type.NODE;
-                    String uniqueId;
-                    if (myType == Type.CLIENT) {
-                        uniqueId = makeUniqueId(originalSenderId, msg.getMessageId(), type) + "-" + msg.getSenderId();
-                    } else {
-                        uniqueId = makeUniqueId(originalSenderId, msg.getMessageId(), type);
-                    }
-
-                    if (pending.remove(uniqueId) != null) {
-                        pendingStatus.remove(uniqueId);
-                    } else {
-                        System.out.println("[LINK] ACK received but could not find pending message: " + uniqueId);
-                    }
-                    continue; 
-                }
-
-                Type senderTypeEnum = senderType.equals("CLIENT") ? Type.CLIENT : Type.NODE;
-                String uniqueId = makeUniqueId(msg.getSenderId(), msg.getMessageId(), senderTypeEnum);
-                System.out.println(msg.getSenderId() + " " + msg.getMessageId() + " uniqueId: " + uniqueId);
-                for (String id : delivered) {
-                    System.out.println("Delivered: " + id);
-                }
-                if (delivered.contains(uniqueId)) {
-                    System.out.println("[LINK] Duplicate received, ignoring: " + uniqueId 
-                        + " type=" + msg.getType() + " from " + msg.getSenderId());
-                    continue;
-                }
-                delivered.add(uniqueId);
-
-                Message ack = new Message(myId, Message.Type.ACK);
-                ack.setMessageId(msg.getMessageId());
-                ack.setReceiver(msg.getSenderId());
-                InetSocketAddress ackDest;
-                if ("CLIENT".equals(senderType)) {
-                    ackDest = clientAddresses.get(senderId);
+            // Handle ACKs
+            if (msg.getType() == Message.Type.ACK) {
+                int originalSenderId = msg.getReceiver(); 
+                Type type = senderType.equals("CLIENT") ? Type.CLIENT : Type.NODE;
+                String uniqueId;
+                if (myType == Type.CLIENT) {
+                    // For client broadcasts, we added "-replicaId" to the uniqueId
+                    uniqueId = makeUniqueId(originalSenderId, msg.getMessageId(), type) + "-" + msg.getSenderId();
                 } else {
-                    ackDest = nodeAddresses.get(senderId);
+                    // Node-to-node messages use the old uniqueId
+                    uniqueId = makeUniqueId(originalSenderId, msg.getMessageId(), type);
                 }
-                ack.setSignature(cryptoLibrary.signShare(gson.toJson(ack).getBytes()));
 
-                socket.send(new DatagramPacket(gson.toJson(ack).getBytes(), gson.toJson(ack).getBytes().length, ackDest.getAddress(), ackDest.getPort()));
-                return msg;
-            //System.err.println("Not enough shares yet, keep waiting: " + sigShareBuffer.toString());
+                if (pending.remove(uniqueId) != null) {
+                    pendingStatus.remove(uniqueId);
+                    //System.out.println("[LINK] ACK processed, removed from pending: " + uniqueId);
+                } else {
+                    System.out.println("[LINK] ACK received but could not find pending message: " + uniqueId);
+                }
+                continue; 
+            }
+
+            Type senderTypeEnum = senderType.equals("CLIENT") ? Type.CLIENT : Type.NODE;
+            String uniqueId = makeUniqueId(msg.getSenderId(), msg.getMessageId(), senderTypeEnum);
+            if (delivered.contains(uniqueId)) {
+                System.out.println("[LINK] Duplicate received, ignoring: " + uniqueId 
+                    + " type=" + msg.getType() + " from " + msg.getSenderId());
+                continue;
+            }
+            delivered.add(uniqueId);
+
+            Message ack = new Message(myId, Message.Type.ACK);
+            ack.setMessageId(msg.getMessageId());
+            ack.setReceiver(msg.getSenderId());
+            InetSocketAddress ackDest;
+            if ("CLIENT".equals(senderType)) {
+                ackDest = clientAddresses.get(senderId);
+            } else {
+                ackDest = nodeAddresses.get(senderId);
+            }
+            ack.setSignature(cryptoLibrary.sign(gson.toJson(ack).getBytes()));
+
+            socket.send(new DatagramPacket(gson.toJson(ack).getBytes(), gson.toJson(ack).getBytes().length, ackDest.getAddress(), ackDest.getPort()));
+            return msg;
         }
     }
 
@@ -284,7 +243,7 @@ public class Link {
             msg.setReceiver(replicaId);
 
             msg.setSignature(null);
-            msg.setSignature(cryptoLibrary.signShare(gson.toJson(msg).getBytes()));
+            msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
 
             byte[] data = gson.toJson(msg).getBytes();
             String uniqueId = makeUniqueId(myId, messageId, Type.NODE)  + "-" + replicaId;  

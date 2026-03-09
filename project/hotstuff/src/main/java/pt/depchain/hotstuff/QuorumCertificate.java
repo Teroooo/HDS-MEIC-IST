@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import threshsig.SigShare;
+
 /**
  * Quorum Certificate (QC) represents a collection of (n-f) votes for a specific
  * proposal in a specific view and phase.
@@ -22,7 +24,7 @@ public class QuorumCertificate implements Serializable {
     private final int viewNumber;
     private final byte[] nodeHash;
     private final List<Integer> voterIds;
-    private final List<byte[]> signatures;
+    private final List<SigShare> signatures;
     
     public QuorumCertificate(QCType type, int viewNumber, byte[] nodeHash) {
         this.type = type;
@@ -32,7 +34,7 @@ public class QuorumCertificate implements Serializable {
         this.signatures = new ArrayList<>();
     }
     
-    public void addVote(int voterId, byte[] signature) {
+    public void addVote(int voterId, SigShare signature) {
         if (!voterIds.contains(voterId)) {
             voterIds.add(voterId);
             signatures.add(signature);
@@ -55,7 +57,7 @@ public class QuorumCertificate implements Serializable {
         return voterIds;
     }
     
-    public List<byte[]> getSignatures() {
+    public List<SigShare> getSignatures() {
         return signatures;
     }
     

@@ -34,7 +34,10 @@ public class Link {
     public Link(int myId, Type myType, String membershipFile, String myPrivKey, String myPubKey) throws Exception {
         this.myId = myId;
         this.myType = myType;
-        this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey);
+        if(myType == Type.NODE)
+            this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey, myId);
+        else
+            this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey);
 
         JsonArray root = JsonParser.parseReader(new FileReader(membershipFile)).getAsJsonArray();
         JsonObject membership = root.get(0).getAsJsonObject();

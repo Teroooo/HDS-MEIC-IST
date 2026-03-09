@@ -2,6 +2,8 @@ package pt.depchain.hotstuff;
 
 import java.io.Serializable;
 
+import threshsig.SigShare;
+
 /**
  * Extended message payload for HotStuff protocol messages.
  * This wraps the data that goes in the Message.payload field (serialized).
@@ -11,9 +13,10 @@ public class HotStuffMessage implements Serializable {
     
     private TreeNode proposal;
     private QuorumCertificate qc;
-    private byte[] voteSignature;
+    private SigShare voteSignature;
     private byte[] nodeHash;
     private String clientCommand;
+    private int viewNumber;
     
     public HotStuffMessage() {
     }
@@ -34,11 +37,11 @@ public class HotStuffMessage implements Serializable {
         this.qc = qc;
     }
     
-    public byte[] getVoteSignature() {
+    public SigShare getVoteSignature() {
         return voteSignature;
     }
     
-    public void setVoteSignature(byte[] voteSignature) {
+    public void setVoteSignature(SigShare voteSignature) {
         this.voteSignature = voteSignature;
     }
     
@@ -56,5 +59,13 @@ public class HotStuffMessage implements Serializable {
     
     public void setClientCommand(String clientCommand) {
         this.clientCommand = clientCommand;
+    }
+
+    public int getViewNumber() {
+        return this.viewNumber;
+    }
+
+    public void setViewNumber(int viewNumber) {
+        this.viewNumber = viewNumber;
     }
 }

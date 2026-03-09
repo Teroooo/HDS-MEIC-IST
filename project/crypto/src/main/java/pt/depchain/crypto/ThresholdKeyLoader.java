@@ -72,7 +72,16 @@ public class ThresholdKeyLoader {
         KeyShare[] signingShares = pickRandomShares(shares, k);
         SigShare[] sigShares = signShares(signingShares, message);
 
+
         boolean verified = SigShare.verify(message, sigShares, k, l, n, e);
+        System.err.println("message: " + message);
+        for(SigShare s : sigShares) {
+            System.out.println("Share from node " + s);
+        }
+        System.out.println("k: " + k); 
+        System.out.println("l: " + l);
+        System.out.println("n: " + n);
+        System.out.println("e: " + e);
 
         System.out.println("Expected: true");
         System.out.println("Result: " + verified + "\n");

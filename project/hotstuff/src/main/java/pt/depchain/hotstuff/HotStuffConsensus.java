@@ -418,6 +418,9 @@ public class HotStuffConsensus {
             if (decideCallback != null) {
                 decideCallback.onDecide(decidedNode,  viewNumber - 1);
             }
+
+            link.send(Link.Type.CLIENT, 1, Message.Type.REPLY, "message " + decidedNode.getRequestKey() + " committed in view " + (viewNumber - 1));
+
             // Move to next view
             Thread.sleep(100); // Small delay before starting next view
             startView();

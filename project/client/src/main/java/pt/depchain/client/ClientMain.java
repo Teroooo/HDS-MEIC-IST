@@ -6,6 +6,8 @@ import java.util.Scanner;
 import com.google.gson.JsonObject;
 
 public class ClientMain {
+    private static volatile int receivedMessages = 0;
+    
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
             System.err.println("Usage: java ClientMain <clientId>");
@@ -20,8 +22,8 @@ public class ClientMain {
             try {
                 while (true) {
                     Message msg = link.receive();
-                    System.out.println("\nReceived from " + msg.getSenderId() + ": " + msg.getPayload()); 
-                    System.out.print("> ");
+                    receivedMessages++;
+                    System.out.println("Received from " + msg.getSenderId() + ": " + msg.getPayload()); 
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -44,20 +46,29 @@ public class ClientMain {
                            
                     System.out.print("Enter string to append: ");
                     String text = scanner.nextLine();
-
+                    
                     messageId++;
+                    receivedMessages = 0;  // Reset counter
+                    
                     JsonObject payloadJson = new JsonObject();
                     payloadJson.addProperty("text", text);
                     payloadJson.addProperty("clientId", clientId);
                     payloadJson.addProperty("messageId", messageId);
-
+                    
                     String payload = payloadJson.toString();
                     int[] replicas = {1,2,3,4};
-
-                   
+                    
+                    
                     link.broadcastWithId(replicas, Message.Type.APPEND_STRING, payload, messageId);
-
-                    System.out.println("Append request sent.");
+                    
+                    System.out.println("\nAppend request sent. Waiting for responses...");
+                    
+                    // Wait for (n-f) = 3 responses
+                    while (receivedMessages < 3) {
+                        Thread.sleep(100);  
+                    }
+                    
+                    System.out.println("String committed!");
                     break;
 
                 case "0":

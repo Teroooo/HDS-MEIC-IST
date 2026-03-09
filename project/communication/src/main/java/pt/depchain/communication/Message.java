@@ -22,7 +22,8 @@ public class Message implements Serializable {
         NEW_VIEW, PREPARE, PREPARE_VOTE,
         PRE_COMMIT, PRE_COMMIT_VOTE,
         COMMIT, COMMIT_VOTE,
-        DECIDE
+        DECIDE,
+        REPLY
     }
 
     public Message(int senderId, Type type) {

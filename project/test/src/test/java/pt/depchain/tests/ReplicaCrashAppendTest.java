@@ -8,9 +8,34 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ReplicaCrashAppendTest {
-
+    /** Kill any leftover processes occupying the node/client UDP ports. */
+    private void freeAllPorts() {
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        if (isWindows) {
+            // PowerShell one-liner: find all PIDs listening on our ports and kill them
+            try {
+                Process p = new ProcessBuilder("powershell", "-NoProfile", "-Command",
+                    "Get-NetUDPEndpoint -LocalPort 9001,9002,9003,9004,4001,4002 -ErrorAction SilentlyContinue" +
+                    " | Select-Object -ExpandProperty OwningProcess -Unique" +
+                    " | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }")
+                    .redirectErrorStream(true).start();
+                p.waitFor(10, TimeUnit.SECONDS);
+            } catch (Exception ignored) {}
+        } else {
+            int[] ports = {9001, 9002, 9003, 9004, 4001, 4002};
+            for (int port : ports) {
+                try {
+                    new ProcessBuilder("fuser", "-k", port + "/udp")
+                        .redirectErrorStream(true).start().waitFor(5, TimeUnit.SECONDS);
+                } catch (Exception ignored) {}
+            }
+        }
+        try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
+    }
+    
     @Test
     public void testAppendStringConsensus() throws Exception {
+        freeAllPorts();
         List<Process> nodes = new ArrayList<>();
         Process client = null;
 

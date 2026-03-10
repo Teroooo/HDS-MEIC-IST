@@ -145,6 +145,31 @@ public class Link {
         socket.send(new DatagramPacket(data, data.length, dest.getAddress(), dest.getPort()));
     }
 
+    public void sendAs(int spoofedSenderId, Type destType, int destId, Message.Type type, String payload) throws Exception {
+        Message msg = new Message(spoofedSenderId, type);
+        int localMsgId = getNextMessageId();
+        msg.setMessageId(localMsgId);
+        msg.setPayload(payload);
+        msg.setReceiver(destId);
+
+        msg.setSignature(null);
+        msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
+
+        byte[] data = gson.toJson(msg).getBytes();
+
+        String uniqueId = makeUniqueId(spoofedSenderId, localMsgId, destType);
+        pending.put(uniqueId, new Object[]{msg, destType});
+        pendingStatus.put(uniqueId, System.currentTimeMillis());
+
+        InetSocketAddress dest;
+        if (destType == Type.CLIENT) {
+            dest = clientAddresses.get(destId);
+        } else {
+            dest = nodeAddresses.get(destId);
+        }
+        socket.send(new DatagramPacket(data, data.length, dest.getAddress(), dest.getPort()));
+    }
+
     public Message receive() throws Exception {
         byte[] buffer = new byte[65536];
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
@@ -155,6 +180,9 @@ public class Link {
             InetAddress senderAddress = packet.getAddress();
             int senderPort = packet.getPort();
             InetSocketAddress senderSocket = new InetSocketAddress(senderAddress, senderPort);
+            
+            String json = new String(packet.getData(), 0, packet.getLength());
+            Message msg = gson.fromJson(json, Message.class);
 
             String senderType = "UNKNOWN";
             int senderId = -1;
@@ -174,11 +202,12 @@ public class Link {
                         break;
                     }
                 }
+                if(senderId != msg.getSenderId()){
+                    System.out.println("WARNING: Sender ID " + msg.getSenderId() + " does not match socket info " + senderSocket);
+                    continue;
+                }
             }
-
-            String json = new String(packet.getData(), 0, packet.getLength());
-            Message msg = gson.fromJson(json, Message.class);
-
+            System.out.println("Received message from " + senderType + " " + senderId + " at " + senderSocket);
 
             byte[] signature = msg.getSignature();
             msg.setSignature(null);

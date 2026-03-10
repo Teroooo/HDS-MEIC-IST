@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class LeaderCrashAppendTest {
+public class WrongSenderTest {
 
     /** Kill any leftover processes occupying the node/client UDP ports. */
     private void freeAllPorts() {
@@ -42,7 +42,7 @@ public class LeaderCrashAppendTest {
 
         try {
             // Start 4 nodes
-            for (int i = 1; i <= 4; i++) {
+            for (int i = 1; i <= 3; i++) {
                 final int nodeId = i; // copy for lambda
                 ProcessBuilder pb = new ProcessBuilder(
                         "mvn", "exec:java",
@@ -56,6 +56,15 @@ public class LeaderCrashAppendTest {
                 // Print node logs asynchronously
                 //new Thread(() -> printProcessOutput(node, "NODE-" + nodeId)).start(); // use nodeId           
             }
+            final int nodeId = 3; // copy for lambda
+            ProcessBuilder pb_biz = new ProcessBuilder(
+                "mvn", "exec:java",
+                "-Dexec.mainClass=pt.depchain.service.ByzantineNode",
+                "-Dexec.args=4 wrong-sender"
+            );
+            pb_biz.redirectErrorStream(true);
+            Process node_biz = pb_biz.start();
+            nodes.add(node_biz);
 
             // Wait a few seconds for nodes to initialize
             Thread.sleep(1000);
@@ -92,11 +101,11 @@ public class LeaderCrashAppendTest {
             boolean found = false;
             long start = System.currentTimeMillis();
             long timeout = 10000; // 10 seconds max
-
+            String warning = "WARNING: Sender ID 1 does not match socket info /127.0.0.1:9004";
             while (System.currentTimeMillis() - start < timeout) {
                 for (Process node : nodes) {
                     String nodeOutput = readProcessOutputNonBlocking(node);
-                    if (nodeOutput.contains("correto")) {
+                    if (nodeOutput.contains(warning)) {
                         found = true;
                         break;
                     }
@@ -105,45 +114,7 @@ public class LeaderCrashAppendTest {
                 Thread.sleep(200); // small delay
             }
 
-            assertTrue(found, "Blockchain should contain the appended string 'correto'");
-
-            Thread.sleep(200); // small delay
-            nodes.get(1).destroyForcibly();
-            Thread.sleep(200); // small delay
-
-
-            // Send "Append String" command: choose option 1 and then type "test"
-            clientWriter.write("1\n"); // select append
-            clientWriter.flush();
-            Thread.sleep(200); // small delay
-            clientWriter.write("leadercrash\n"); // string to append
-            clientWriter.flush();
-
-            // Wait for consensus to happen
-            Thread.sleep(4000);
-
-            // Check nodes’ outputs for the appended string
-            boolean[] foundList = new boolean[4];
-            start = System.currentTimeMillis();
-            timeout = 30000; // 30 seconds max
-            while (System.currentTimeMillis() - start < timeout) {
-                int count = 0;
-                for (Process node : nodes) {
-                    if (count == 1) { // skip the crashed node
-                        count++;
-                        continue;
-                    }
-                    String nodeOutput = readProcessOutputNonBlocking(node);
-                    if (nodeOutput.contains("leadercrash")) {
-                        foundList[count] = true;
-                        break;
-                    }
-                    count++;
-                }
-                Thread.sleep(200); // small delay
-            }
-            assertTrue(foundList[0] && foundList[2] && foundList[3], "Blockchain should contain the appended string 'leadercrash'");
-
+            assertTrue(found, "Detected Node 4 spoofing FakeID:1");
 
         } finally {
             // Kill all nodes

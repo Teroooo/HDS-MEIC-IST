@@ -72,7 +72,7 @@ public class ByzantineNode {
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
             System.err.println("Usage: java ByzantineNode <nodeId> [attack-mode]");
-            System.err.println("  attack-mode: bad-hash | duplicate-msg | bad-share");
+            System.err.println("  attack-mode: bad-hash | duplicate-msg | bad-share | wrong-sender");
             System.exit(1);
         }  
 
@@ -85,6 +85,7 @@ public class ByzantineNode {
                 case "bad-hash":      attackMode = ByzantineHotStuffConsensus.AttackMode.BAD_HASH; break;
                 case "duplicate-msg": attackMode = ByzantineHotStuffConsensus.AttackMode.DUPLICATE_MSG; break;
                 case "bad-share":     attackMode = ByzantineHotStuffConsensus.AttackMode.BAD_SHARE; break;
+                case "wrong-sender":  attackMode = ByzantineHotStuffConsensus.AttackMode.WRONG_SENDER; break;
                 default:
                     System.err.println("Unknown attack mode: " + args[1]);
                     System.exit(1);

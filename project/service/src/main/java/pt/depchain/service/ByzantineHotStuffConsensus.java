@@ -30,7 +30,8 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
     public enum AttackMode {
         BAD_HASH,           // Proposta com hash errada (líder) + voto forjado (réplica)
         DUPLICATE_MSG,      // Réplica envia voto duplicado
-        BAD_SHARE           // Réplica assina com dados corrompidos (share inválida)
+        BAD_SHARE,          // Réplica assina com dados corrompidos (share inválida)
+        WRONG_SENDER        // Réplica envia voto com sender ID falsificado
     }
 
     private final AttackMode attackMode;
@@ -57,6 +58,8 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
             case BAD_SHARE:
                 this.useBadStrings = false;
                 this.useBadHash = false;
+                break;
+            case WRONG_SENDER:
                 break;
         }
     }
@@ -148,6 +151,9 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
             case BAD_SHARE:
                 handlePrepare_BadShare(msg);
                 break;
+            case WRONG_SENDER:
+                handlePrepare_WrongSender(msg);
+                break;
         }
     }
 
@@ -232,6 +238,34 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
             
             String payload = gson.toJson(voteMsg);
             link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
+        }
+    }
+
+    // ── ATAQUE WRONG_SENDER: envia voto com sender ID falsificado ──
+    private void handlePrepare_WrongSender(Message msg) throws Exception {
+        HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
+        TreeNode proposal = hsMsg.getProposal();
+        QuorumCertificate justify = hsMsg.getQc();
+        
+        blockchain.addNode(proposal);
+        currentProposal = proposal;
+        
+        if (safeNode(proposal, justify)) {
+            SigShare voteSignature = crypto.signShare(
+                createVoteData(viewNumber, Message.Type.PREPARE_VOTE, proposal.getHash())
+            );
+            
+            // Escolhe um sender ID falso (outro nó qualquer)
+            int fakeSenderId = (myId % n) + 1;
+            System.out.println("[BYZANTINE REPLICA] Sending PREPARE_VOTE with WRONG SENDER ID! Real=" + myId + " Spoofed=" + fakeSenderId);
+            
+            HotStuffMessage voteMsg = new HotStuffMessage();
+            voteMsg.setNodeHash(proposal.getHash());
+            voteMsg.setVoteSignature(voteSignature);
+            voteMsg.setViewNumber(viewNumber);
+            
+            String payload = gson.toJson(voteMsg);
+            link.sendAs(fakeSenderId, Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
         }
     }
 }

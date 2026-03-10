@@ -28,17 +28,16 @@ public class CryptoLibrary {
 
     private final HashMap<String, PublicKey> publicKeys = new HashMap<>();
 
-    //-------------------------------------------------------------------------------------------
 
     public int k = 3;
     public int l = 4;
 
-    private final GroupKey groupKey = null; // Placeholder values
-    private final KeyShare[] keyShares = new KeyShare[l]; // Placeholder values
-    private KeyShare myKey; // Placeholder values
+    private final GroupKey groupKey = null;
+    private final KeyShare[] keyShares = new KeyShare[l];
+    private KeyShare myKey;
 
-    private BigInteger n = null; // Placeholder values
-    private BigInteger e = null; // Placeholder values
+    private BigInteger n = null;
+    private BigInteger e = null;
 
 
     public CryptoLibrary(String privateKeyPath, String publicKeyPath, int myId) throws Exception {
@@ -47,13 +46,6 @@ public class CryptoLibrary {
         loadGroupKey();
         loadKeyShares();
         loadMyKeyShare(myId);
-        // Debug: print group parameters and my KeyShare
-        System.out.println("[CryptoLibrary] Node " + myId + " groupKey n=" + n);
-        System.out.println("[CryptoLibrary] Node " + myId + " groupKey e=" + e);
-        System.out.println("[CryptoLibrary] Node " + myId + " k=" + k + ", l=" + l);
-        if (myKey != null) {
-            System.out.println("[CryptoLibrary] Node " + myId + " KeyShare id=" + myKey.getId());
-        }
     }
 
     public CryptoLibrary(String privateKeyPath, String publicKeyPath) throws Exception {

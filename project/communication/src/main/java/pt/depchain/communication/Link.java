@@ -207,7 +207,6 @@ public class Link {
                     continue;
                 }
             }
-            System.out.println("Received message from " + senderType + " " + senderId + " at " + senderSocket);
 
             byte[] signature = msg.getSignature();
             msg.setSignature(null);

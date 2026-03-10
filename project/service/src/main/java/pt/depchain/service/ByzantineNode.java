@@ -25,7 +25,7 @@ public class ByzantineNode {
     private static Map<String, RequestState> pendingClientRequests = new HashMap<>();
     
     private static final ScheduledExecutorService pacemaker = Executors.newSingleThreadScheduledExecutor();
-    private static ScheduledFuture<?> timeoutTask; // <--- Add this line
+    private static ScheduledFuture<?> timeoutTask; 
     private static final long VIEW_TIMEOUT_MS = 10000;
     private static boolean isTimerRunning = false;
 
@@ -265,7 +265,6 @@ public class ByzantineNode {
                 String proposedCommand = hsmsg.getProposal().getCommand();
                 if (!proposedCommand.equals(stringToAppend)) {
                     System.out.println("[NODE] Byzantine leader detected: command mismatch for " + key);
-                    // Don't vote, but continue to start pacemaker for view change
                 } else {
                     consensus.handlePrepare(buffered);
                 }

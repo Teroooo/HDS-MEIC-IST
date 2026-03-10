@@ -10,10 +10,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.nio.charset.StandardCharsets;
-/**
- * Implementation of Basic HotStuff consensus algorithm (Algorithm 2).
- * This is Step 3: without timeout/failure detection, assuming honest nodes.
- */
+
 public class HotStuffConsensus {
     
     protected final int myId;
@@ -24,7 +21,7 @@ public class HotStuffConsensus {
     protected final Blockchain blockchain;
     protected final Gson gson = new Gson();
     
-    // Protocol state variables (from Algorithm 2)
+
     protected int viewNumber;
     protected QuorumCertificate prepareQC;
     private QuorumCertificate lockedQC;
@@ -58,10 +55,7 @@ public class HotStuffConsensus {
         commitStarted = false;
         decideStarted = false;
         
-        this.startView();
-        
-        // If I am the NEW leader, check if I have commands to propose immediately
-             
+        this.startView();             
     }
     
     public HotStuffConsensus(int myId, int n, int f, Link link, CryptoLibrary crypto, Blockchain blockchain) {
@@ -80,9 +74,6 @@ public class HotStuffConsensus {
         this.decideCallback = callback;
     }
 
-    /**
-     * Start the consensus for a new view
-     */
     public void startView() throws Exception {
         System.out.println("[CONSENSUS] Node " + myId + " starting view " + viewNumber);
         
@@ -103,9 +94,7 @@ public class HotStuffConsensus {
         System.out.println("[CONSENSUS] Node " + myId + " sent NEW_VIEW to leader " + leader);
     }
     
-    /**
-     * Handle incoming NEW_VIEW message (leader only)
-     */
+
     public void handleNewView(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         newViewMessages.put(msg.getSenderId(), hsMsg);
@@ -116,14 +105,11 @@ public class HotStuffConsensus {
         // Start PREPARE phase when we reach exactly (n-f) NEW_VIEW messages
         System.out.println("Current NEW_VIEW messages: " + newViewMessages.size());
         if (isLeader() && newViewMessages.size() == (n - f)) {
-            System.out.println("Entrei aqui2");
             runPreparePhase();
         }
     }
     
-    /**
-     * PREPARE phase (leader proposes, replicas vote)
-     */
+
     protected void runPreparePhase() throws Exception {
         if (!isLeader() || prepareStarted) return;
 
@@ -146,7 +132,6 @@ public class HotStuffConsensus {
         } else {
             parent = blockchain.getLastCommittedNode();
         }
-        System.out.println("alo3");
         System.out.println("currentProposal: " + currentProposal);
         if (currentProposal != null) {
             // Re-propose the previous proposal (crash recovery)
@@ -177,9 +162,7 @@ public class HotStuffConsensus {
         }
     }
     
-    /**
-     * Handle incoming PREPARE message (all replicas)
-     */
+
     public void handlePrepare(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         TreeNode proposal = hsMsg.getProposal();
@@ -210,9 +193,7 @@ public class HotStuffConsensus {
         }
     }
     
-    /**
-     * Handle incoming PREPARE_VOTE (leader only)
-     */
+
     public void handlePrepareVote(Message msg) throws Exception {
         if (!isLeader()) return;
         
@@ -262,9 +243,6 @@ public class HotStuffConsensus {
        
     }
     
-    /**
-     * PRE-COMMIT phase
-     */
     private void runPreCommitPhase(TreeNode verifiedProposal) throws Exception {
         if (!isLeader() || precommitStarted) return;
         precommitStarted = true;
@@ -293,9 +271,7 @@ public class HotStuffConsensus {
         // System.out.println("[TEST] Woke up, now sending Commit. If you killed the process before, this won't happen.");
     }
     
-    /**
-     * Handle incoming PRE_COMMIT message (all replicas)
-     */
+    
     public void handlePreCommit(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         QuorumCertificate qc = hsMsg.getQc();
@@ -321,9 +297,6 @@ public class HotStuffConsensus {
         }
     }
     
-    /**
-     * Handle incoming PRE_COMMIT_VOTE (leader only)
-     */
     public void handlePreCommitVote(Message msg) throws Exception {
         if (!isLeader()) return;
         
@@ -372,9 +345,7 @@ public class HotStuffConsensus {
         // Advance to next phase when we reach exactly (n-f) votes
     }
     
-    /**
-     * COMMIT phase
-     */
+
     private void runCommitPhase(TreeNode verifiedProposal) throws Exception {
         if (!isLeader() || commitStarted) return;
         commitStarted = true;
@@ -403,9 +374,7 @@ public class HotStuffConsensus {
         // System.out.println("[TEST] Woke up, now sending DECIDE. If you killed the process before, this won't happen.");
     }
     
-    /**
-     * Handle incoming COMMIT message (all replicas)
-     */
+
     public void handleCommit(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         QuorumCertificate qc = hsMsg.getQc();
@@ -432,9 +401,7 @@ public class HotStuffConsensus {
         }
     }
     
-    /**
-     * Handle incoming COMMIT_VOTE (leader only)
-     */
+
     public void handleCommitVote(Message msg) throws Exception {
         if (!isLeader()) return;
         
@@ -483,9 +450,7 @@ public class HotStuffConsensus {
         // Advance to next phase when we reach exactly (n-f) votes
     }
     
-    /**
-     * DECIDE phase
-     */
+
     private void runDecidePhase(TreeNode verifiedProposal) throws Exception {
         if (!isLeader() || decideStarted) return;
         decideStarted = true;
@@ -514,9 +479,7 @@ public class HotStuffConsensus {
         // This ensures all nodes move to next view synchronously
     }
     
-    /**
-     * Handle incoming DECIDE message (all replicas)
-     */
+
     public void handleDecide(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         QuorumCertificate commitQC = hsMsg.getQc();
@@ -549,9 +512,7 @@ public class HotStuffConsensus {
         }
     }
     
-    /**
-     * SafeNode predicate (Lines 25-27 of Algorithm 2)
-     */
+
     protected boolean safeNode(TreeNode node, QuorumCertificate qc) {
         // Safety rule: node extends from lockedQC.node
         if (lockedQC != null) {
@@ -572,16 +533,12 @@ public class HotStuffConsensus {
         return false;
     }
     
-    /**
-     * Determine leader for a given view (simple round-robin)
-     */
+
     private int getLeader(int view) {
         return ((view - 1) % n) + 1;
     }
     
-    /**
-     * Check if this node is the leader for current view
-     */
+
     public boolean isLeader() {
         return myId == getLeader(viewNumber);
     }
@@ -590,23 +547,16 @@ public class HotStuffConsensus {
         return viewNumber;
     }
     
-    /**
-     * Add a command to the pending queue (called when client sends request)
-     */
+
     public void addCommand(String command, String requestKey) throws Exception {
         pendingCommands.offer(new CommandRequest(command, requestKey));
         System.out.println("[CONSENSUS] Node " + myId + " queued command with key " + requestKey + ": \"" + command + "\"");
 
         // If this node is the leader and we have enough NEW_VIEW messages, try to propose
         if (isLeader() && newViewMessages.size() >= (n - f)) {
-            System.out.println("Entrei aqui");
             runPreparePhase();
         }
     }
-    
-    /**
-     * Create vote data for signing
-     */
     
 
     protected byte[] createVoteData(int viewnumber, Message.Type voteType, byte[] nodeHash) {
@@ -619,18 +569,12 @@ public class HotStuffConsensus {
     }
     
     
-    /**
-     * Callback interface for when consensus decides
-     */
+
     public interface DecideCallback {
         void onDecide(TreeNode decidedNode, int view) throws Exception;
     }
     
-    
-    /**
-     * Internal class to track command requests
-     */
-  
+
     protected static class CommandRequest {
         public final String command;
         public final String requestKey;

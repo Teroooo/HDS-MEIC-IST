@@ -19,12 +19,7 @@ import pt.depchain.hotstuff.TreeNode;
 import pt.depchain.hotstuff.QuorumCertificate;
 import threshsig.SigShare;
 
-/**
- * Nó bizantino com dois comportamentos maliciosos:
- * 
- * 1) COMO LÍDER: propõe comando corrompido (altera dados do cliente)
- * 2) COMO RÉPLICA: forja voto com hash diferente do proposto
- */
+
 public class ByzantineHotStuffConsensus extends HotStuffConsensus {
 
     public enum AttackMode {
@@ -64,9 +59,9 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
         }
     }
     
-    // ═══════════════════════════════════════════════════════════
-    // ATAQUE 1: LÍDER MALICIOSO - propõe comando corrompido
-    // ═══════════════════════════════════════════════════════════
+    // 
+    // LÍDER MALICIOSO - propõe comando corrompido
+    // 
     
     @Override
     protected void runPreparePhase() throws Exception {
@@ -135,9 +130,9 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
         System.out.println("[BYZANTINE LEADER] ══════════════════════════════");
     }
     
-    // ═══════════════════════════════════════════════════════════
-    // ATAQUE 2: RÉPLICA MALICIOSA - forja voto com hash diferente
-    // ═══════════════════════════════════════════════════════════
+    // 
+    // RÉPLICA MALICIOSA - forja voto com hash diferente
+    // 
     
     @Override
     public void handlePrepare(Message msg) throws Exception {
@@ -157,7 +152,7 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
         }
     }
 
-    // ── ATAQUE BAD_HASH: forja voto com hash diferente ──
+    //  BAD_HASH: forja voto com hash diferente 
     private void handlePrepare_BadHash(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         TreeNode proposal = hsMsg.getProposal();
@@ -188,7 +183,7 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
         }
     }
 
-    // ── ATAQUE DUPLICATE_MSG: envia voto correto duas vezes ──
+    //   DUPLICATE_MSG: envia voto correto duas vezes 
     private void handlePrepare_Duplicate(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         TreeNode proposal = hsMsg.getProposal();
@@ -215,7 +210,7 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
         }
     }
 
-    // ── ATAQUE BAD_SHARE: assina dados corrompidos (share inválida) ──
+    //  BAD_SHARE: assina dados corrompidos (share inválida) 
     private void handlePrepare_BadShare(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         TreeNode proposal = hsMsg.getProposal();
@@ -241,7 +236,7 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
         }
     }
 
-    // ── ATAQUE WRONG_SENDER: envia voto com sender ID falsificado ──
+    // WRONG_SENDER: envia voto com sender ID falsificado 
     private void handlePrepare_WrongSender(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         TreeNode proposal = hsMsg.getProposal();

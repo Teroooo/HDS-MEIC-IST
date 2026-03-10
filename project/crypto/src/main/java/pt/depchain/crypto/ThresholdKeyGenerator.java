@@ -35,7 +35,7 @@ public class ThresholdKeyGenerator {
 
         Files.writeString(Paths.get("../config/groupKey.json"), gson.toJson(groupJson));
 
-        // --- Save each share ---
+        
         Field gvField = KeyShare.class.getDeclaredField("groupVerifier");
         gvField.setAccessible(true);
         Field nField = KeyShare.class.getDeclaredField("n");

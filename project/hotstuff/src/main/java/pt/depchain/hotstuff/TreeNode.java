@@ -6,10 +6,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * Represents a node in the blockchain tree.
- * Each node contains a command (string to append) and links to parent and children.
- */
 public class TreeNode implements Serializable {
     private static final long serialVersionUID = 1L;
     
@@ -72,9 +68,7 @@ public class TreeNode implements Serializable {
         return parentHash == null;
     }
     
-    /**
-     * Compute hash of this node (digest of command + parentHash + viewNumber)
-     */
+
     private byte[] computeHash() {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -89,9 +83,7 @@ public class TreeNode implements Serializable {
         }
     }
     
-    /**
-     * Check if this node extends from another node (i.e., other is ancestor)
-     */
+
     public boolean extendsFrom(TreeNode other) {
         if (other == null) return true; // null means root/genesis
         if (Arrays.equals(this.hash, other.hash)) return true;
@@ -99,9 +91,7 @@ public class TreeNode implements Serializable {
         return Arrays.equals(this.parentHash, other.hash);
     }
     
-    /**
-     * Get the path from this node to root
-     */
+
     public List<byte[]> getPathToRoot() {
         List<byte[]> path = new ArrayList<>();
         path.add(this.hash);

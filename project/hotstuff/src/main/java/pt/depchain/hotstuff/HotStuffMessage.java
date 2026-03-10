@@ -4,10 +4,7 @@ import java.io.Serializable;
 
 import threshsig.SigShare;
 
-/**
- * Extended message payload for HotStuff protocol messages.
- * This wraps the data that goes in the Message.payload field (serialized).
- */
+
 public class HotStuffMessage implements Serializable {
     private static final long serialVersionUID = 1L;
     

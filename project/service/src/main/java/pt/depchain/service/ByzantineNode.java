@@ -18,9 +18,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.Gson;
 
-public class Node {
+public class ByzantineNode {
     
-    private static HotStuffConsensus consensus;
+    private static ByzantineHotStuffConsensus consensus;
     private static Blockchain blockchain;
     private static Map<String, RequestState> pendingClientRequests = new HashMap<>();
     
@@ -91,7 +91,7 @@ public class Node {
         blockchain = new Blockchain();
         
         // Initialize consensus (n=4, f=1 for 4 nodes)
-        consensus = new HotStuffConsensus(nodeId, 4, 1, link, crypto, blockchain);
+        consensus = new ByzantineHotStuffConsensus(nodeId, 4, 1, link, crypto, blockchain);
         
         // Set up callback for when consensus decides
         consensus.setDecideCallback((decidedNode, view) -> {

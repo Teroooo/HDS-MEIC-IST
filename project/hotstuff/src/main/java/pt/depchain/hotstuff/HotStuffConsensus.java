@@ -16,20 +16,20 @@ import java.nio.charset.StandardCharsets;
  */
 public class HotStuffConsensus {
     
-    private final int myId;
-    private final int n; // total number of nodes
-    private final int f; // number of Byzantine faults tolerated
-    private final Link link;
-    private final CryptoLibrary crypto;
-    private final Blockchain blockchain;
-    private final Gson gson = new Gson();
+    protected final int myId;
+    protected final int n; // total number of nodes
+    protected final int f; // number of Byzantine faults tolerated
+    protected final Link link;
+    protected final CryptoLibrary crypto;
+    protected final Blockchain blockchain;
+    protected final Gson gson = new Gson();
     
     // Protocol state variables (from Algorithm 2)
-    private int viewNumber;
-    private QuorumCertificate prepareQC;
+    protected int viewNumber;
+    protected QuorumCertificate prepareQC;
     private QuorumCertificate lockedQC;
-    private TreeNode currentProposal;
-    private boolean prepareStarted = false;
+    protected TreeNode currentProposal;
+    protected boolean prepareStarted = false;
     private boolean precommitStarted = false;
     private boolean commitStarted = false;
     private boolean decideStarted = false;
@@ -39,13 +39,13 @@ public class HotStuffConsensus {
 
 
     // Vote collection for current view
-    private final Map<Integer, HotStuffMessage> newViewMessages = new ConcurrentHashMap<>();
-    private final Map<Integer, HotStuffMessage> prepareVotes = new ConcurrentHashMap<>();
+    protected final Map<Integer, HotStuffMessage> newViewMessages = new ConcurrentHashMap<>();
+    protected final Map<Integer, HotStuffMessage> prepareVotes = new ConcurrentHashMap<>();
     private final Map<Integer, HotStuffMessage> preCommitVotes = new ConcurrentHashMap<>();
     private final Map<Integer, HotStuffMessage> commitVotes = new ConcurrentHashMap<>();
     
     // Command queue (for leader)
-    private final Queue<CommandRequest> pendingCommands = new LinkedBlockingQueue<>();
+    protected final Queue<CommandRequest> pendingCommands = new LinkedBlockingQueue<>();
 
     // Callback for when consensus decides
     private DecideCallback decideCallback;
@@ -124,7 +124,7 @@ public class HotStuffConsensus {
     /**
      * PREPARE phase (leader proposes, replicas vote)
      */
-    private void runPreparePhase() throws Exception {
+    protected void runPreparePhase() throws Exception {
         if (!isLeader() || prepareStarted) return;
 
         prepareStarted = true;
@@ -187,11 +187,12 @@ public class HotStuffConsensus {
         
         //System.out.println("[CONSENSUS] Node " + myId + " received PREPARE from leader " + msg.getSenderId() + ": " + proposal);
         
-        blockchain.addNode(proposal);
-        currentProposal = proposal;
         
         // Check if safe to accept (safeNode predicate)
         if (safeNode(proposal, justify)) {
+            
+            blockchain.addNode(proposal);
+            currentProposal = proposal;
             // Vote for this proposal
             SigShare voteSignature = crypto.signShare(createVoteData(viewNumber, Message.Type.PREPARE_VOTE, proposal.getHash()));
             
@@ -239,9 +240,14 @@ public class HotStuffConsensus {
                 byte[] dataFirst = createVoteData(firstMsg.getViewNumber(), Message.Type.PREPARE_VOTE, firstMsg.getNodeHash());
                 byte[] dataLast = createVoteData(firstMsg.getViewNumber(), Message.Type.PREPARE_VOTE, lastMsg.getNodeHash());
         
-                if (verifyThresholdVote(sigSharesMap, dataFirst) || verifyThresholdVote(sigSharesMap, dataLast)) {
-                    //System.out.println("Threshold signature successful");
-                    runPreCommitPhase();
+                if (verifyThresholdVote(sigSharesMap, dataFirst)) {
+                    System.out.println("Threshold first signature successful");
+                    TreeNode verifiedProposal = blockchain.getNode(firstMsg.getNodeHash());
+                    runPreCommitPhase(verifiedProposal);
+                } else if(verifyThresholdVote(sigSharesMap, dataLast)){
+                    System.out.println("Threshold last signature successful");
+                    TreeNode verifiedProposal = blockchain.getNode(lastMsg.getNodeHash());
+                    runPreCommitPhase(verifiedProposal);
                 } else {
                     if(prepareVotes.size() == n)
                         System.out.println("Threshold signature verification FAILED");
@@ -259,10 +265,11 @@ public class HotStuffConsensus {
     /**
      * PRE-COMMIT phase
      */
-    private void runPreCommitPhase() throws Exception {
+    private void runPreCommitPhase(TreeNode verifiedProposal) throws Exception {
         if (!isLeader() || precommitStarted) return;
         precommitStarted = true;
 
+        currentProposal = verifiedProposal;
         System.out.println("[CONSENSUS] Leader " + myId + " running PRE-COMMIT phase");
         
         // Create prepareQC
@@ -344,9 +351,13 @@ public class HotStuffConsensus {
                 byte[] dataFirst = createVoteData(firstMsg.getViewNumber(), Message.Type.PRE_COMMIT_VOTE, firstMsg.getNodeHash());
                 byte[] dataLast = createVoteData(firstMsg.getViewNumber(), Message.Type.PRE_COMMIT_VOTE, lastMsg.getNodeHash());
         
-                if (verifyThresholdVote(sigSharesMap, dataFirst) || verifyThresholdVote(sigSharesMap, dataLast)) {
+                if (verifyThresholdVote(sigSharesMap, dataFirst)) {
                     //System.out.println("Threshold signature successful");
-                    runCommitPhase();
+                    TreeNode verifiedProposal = blockchain.getNode(firstMsg.getNodeHash());
+                    runCommitPhase(verifiedProposal);
+                } else if(verifyThresholdVote(sigSharesMap, dataLast)){
+                    TreeNode verifiedProposal = blockchain.getNode(lastMsg.getNodeHash());
+                    runCommitPhase(verifiedProposal);
                 } else {
                     if(preCommitVotes.size() == n)
                         System.out.println("Threshold signature verification FAILED");
@@ -364,10 +375,11 @@ public class HotStuffConsensus {
     /**
      * COMMIT phase
      */
-    private void runCommitPhase() throws Exception {
+    private void runCommitPhase(TreeNode verifiedProposal) throws Exception {
         if (!isLeader() || commitStarted) return;
         commitStarted = true;
 
+        currentProposal = verifiedProposal;
         System.out.println("[CONSENSUS] Leader " + myId + " running COMMIT phase");
         
         // Create precommitQC
@@ -450,10 +462,14 @@ public class HotStuffConsensus {
                 byte[] dataFirst = createVoteData(firstMsg.getViewNumber(), Message.Type.COMMIT_VOTE, firstMsg.getNodeHash());
                 byte[] dataLast = createVoteData(firstMsg.getViewNumber(), Message.Type.COMMIT_VOTE, lastMsg.getNodeHash());
         
-                if (verifyThresholdVote(sigSharesMap, dataFirst) || verifyThresholdVote(sigSharesMap, dataLast)) {
+                if (verifyThresholdVote(sigSharesMap, dataFirst)) {
                     //System.out.println("Threshold signature successful");
-                    runDecidePhase();
-                } else {
+                    TreeNode verifiedProposal = blockchain.getNode(firstMsg.getNodeHash());
+                    runDecidePhase(verifiedProposal);
+                } else if(verifyThresholdVote(sigSharesMap, dataLast)){
+                    TreeNode verifiedProposal = blockchain.getNode(lastMsg.getNodeHash());
+                    runDecidePhase(verifiedProposal);
+                }  else {
                     if(commitVotes.size() == n)
                         System.out.println("Threshold signature verification FAILED");
                     else
@@ -470,9 +486,11 @@ public class HotStuffConsensus {
     /**
      * DECIDE phase
      */
-    private void runDecidePhase() throws Exception {
+    private void runDecidePhase(TreeNode verifiedProposal) throws Exception {
         if (!isLeader() || decideStarted) return;
         decideStarted = true;
+        
+        currentProposal = verifiedProposal;
         System.out.println("[CONSENSUS] Leader " + myId + " running DECIDE phase");
         
         // Create commitQC
@@ -525,8 +543,6 @@ public class HotStuffConsensus {
                 decideCallback.onDecide(decidedNode,  viewNumber - 1);
             }
 
-            link.send(Link.Type.CLIENT, 1, Message.Type.REPLY, "message " + decidedNode.getRequestKey() + " committed in view " + (viewNumber - 1));
-
             // Move to next view
             Thread.sleep(100); // Small delay before starting next view
             startView();
@@ -536,7 +552,7 @@ public class HotStuffConsensus {
     /**
      * SafeNode predicate (Lines 25-27 of Algorithm 2)
      */
-    private boolean safeNode(TreeNode node, QuorumCertificate qc) {
+    protected boolean safeNode(TreeNode node, QuorumCertificate qc) {
         // Safety rule: node extends from lockedQC.node
         if (lockedQC != null) {
             TreeNode lockedNode = blockchain.getNode(lockedQC.getNodeHash());
@@ -569,6 +585,10 @@ public class HotStuffConsensus {
     public boolean isLeader() {
         return myId == getLeader(viewNumber);
     }
+
+    public int getViewNumber() {
+        return viewNumber;
+    }
     
     /**
      * Add a command to the pending queue (called when client sends request)
@@ -589,7 +609,7 @@ public class HotStuffConsensus {
      */
     
 
-    private byte[] createVoteData(int viewnumber, Message.Type voteType, byte[] nodeHash) {
+    protected byte[] createVoteData(int viewnumber, Message.Type voteType, byte[] nodeHash) {
         java.util.TreeMap<String, Object> map = new java.util.TreeMap<>();
         map.put("viewNumber", viewnumber); // Using viewNumber as a stable messageId
         map.put("type", voteType.toString());
@@ -598,9 +618,6 @@ public class HotStuffConsensus {
         return gson.toJson(map).getBytes(StandardCharsets.UTF_8);
     }
     
-    public int getViewNumber() {
-        return viewNumber;
-    }
     
     /**
      * Callback interface for when consensus decides
@@ -614,9 +631,9 @@ public class HotStuffConsensus {
      * Internal class to track command requests
      */
   
-    private static class CommandRequest {
-        final String command;
-        final String requestKey;
+    protected static class CommandRequest {
+        public final String command;
+        public final String requestKey;
 
         CommandRequest(String command, String requestKey) {
             this.command = command;

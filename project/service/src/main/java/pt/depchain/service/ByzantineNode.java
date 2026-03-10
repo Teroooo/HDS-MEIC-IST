@@ -264,9 +264,10 @@ public class ByzantineNode {
                 String proposedCommand = hsmsg.getProposal().getCommand();
                 if (!proposedCommand.equals(stringToAppend)) {
                     System.out.println("[NODE] Byzantine leader detected: command mismatch for " + key);
-                    return;
+                    // Don't vote, but continue to start pacemaker for view change
+                } else {
+                    consensus.handlePrepare(buffered);
                 }
-                consensus.handlePrepare(buffered);
             }
             System.out.println("[NODE] New request added to pending buffer with key: " + key);
             if (consensus.isLeader()) {

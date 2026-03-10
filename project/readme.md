@@ -24,7 +24,7 @@ Run Byzantine Node:
 ```
 mvn exec:java "-Dexec.mainClass=pt.depchain.service.ByzantineNode" "-Dexec.args=\<id\> \[behavior\]"  
 ```
-Byzantine Node behaviors: (If not provided, the default is bad-hash)  
+### Byzantine Node behaviors: (If not provided, the default is bad-hash)  
 
 **bad-hash** - When Node is leader will give a corrupted command.  
 duplicate-msg - Node sends 2 identical votes.  

@@ -14,8 +14,11 @@ import pt.depchain.crypto.CryptoLibrary;
 import pt.depchain.hotstuff.Blockchain;
 import pt.depchain.hotstuff.HotStuffConsensus;
 import pt.depchain.hotstuff.TreeNode;
+import threshsig.SigShare;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.mockito.ArgumentCaptor;
 
@@ -204,4 +207,49 @@ public class BFTConsensusTest {
         System.out.println("✓ Blockchains mantêm estrutura consistente\n");
     }
     
+
+        /**
+     * Teste 6: Líder rejeita votos quando threshold signature verification falha
+     * - Imprimir "Threshold signature verification FAILED"
+     */
+    @Test
+    @Order(6)
+    @DisplayName("Líder rejeita votos com threshold signature inválido")
+    void testLeaderRejectsByzantineMessages() throws Exception {
+        System.out.println("\n=== TEST 6: Líder rejeita votos bizantinos ===");
+        
+        // Criar líder com CryptoLibrary que REJEITA threshold verification
+        Link leaderLink = mock(Link.class);
+        CryptoLibrary leaderCrypto = mock(CryptoLibrary.class);
+        Blockchain leaderBlockchain = new Blockchain();
+        
+        doNothing().when(leaderLink).send(any(), anyInt(), any(), anyString());
+        
+        // Mock signShare para o líder poder assinar suas próprias mensagens
+        when(leaderCrypto.signShare(any())).thenReturn(mock(threshsig.SigShare.class));
+
+        HotStuffConsensus leader = new HotStuffConsensus(1, TOTAL_NODES, MAX_FAULTS,
+                                                         leaderLink, leaderCrypto, leaderBlockchain);
+        
+        assertTrue(leader.isLeader(), "Nó 1 deve ser líder na view 1");
+        
+        // Iniciar view e fazer líder propor
+        leader.startView();
+        leader.addCommand("arroz", "test-msg-1");
+        
+        Map<Integer, SigShare> votesMap = new HashMap<Integer, SigShare>();
+
+        for (int i = 1; i <= TOTAL_NODES; i++) {
+            CryptoLibrary cript = new CryptoLibrary("../config/node"+ i +".priv", "../config/node"+i+".pub", i);
+            SigShare s;
+            if(i<3){
+                votesMap.put(i, cript.signShare("arroz".getBytes()));
+            }
+            else{
+                votesMap.put(i, cript.signShare("esparguete".getBytes()));
+            }
+        }
+
+        assertFalse(leader.verifyThresholdVote( votesMap, "arroz".getBytes()));
+    }
 }

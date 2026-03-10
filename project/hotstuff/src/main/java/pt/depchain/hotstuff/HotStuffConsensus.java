@@ -641,7 +641,7 @@ public class HotStuffConsensus {
         }
     }
 
-    private boolean verifyThresholdVote(Map<Integer, SigShare> votesMap, byte[]... candidateDatas) {
+    public boolean verifyThresholdVote(Map<Integer, SigShare> votesMap, byte[]... candidateDatas) {
         List<SigShare> votes = new ArrayList<>(votesMap.values());
 
         for (byte[] data : candidateDatas) {

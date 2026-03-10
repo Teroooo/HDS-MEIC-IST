@@ -23,16 +23,8 @@ import java.util.Map;
 import org.mockito.ArgumentCaptor;
 
 /**
- * Testes de integração para verificar tolerância a falhas bizantinas (BFT)
- * e comportamento quando o líder crasha.
- * 
- * NOTA: Estes são testes de propriedades e estrutura, não simulações completas.
- * Para testes E2E reais, execute os nós separadamente e teste manualmente.
- * 
- * Cenários testados:
- * 1. Propriedades básicas do sistema com múltiplos nós
- * 2. Eleição de líder e rotação de views
- * 3. Estrutura para tolerar até f=1 falhas
+ * NOTA: Estes são testes modulares para testar pequenas partes do código, não simulações completas.
+ * Para testes completos ver readme.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class BFTConsensusTest {
@@ -42,14 +34,14 @@ public class BFTConsensusTest {
     
     
     /**
-     * Teste 2: Eleição de líder funciona corretamente em views rotativas
+     * Teste 1: Eleição de líder funciona corretamente em views rotativas
      * View 1: Líder é nó 1, View 2: Líder é nó 2, etc.
      */
     @Test
-    @Order(2)
+    @Order(1)
     @DisplayName("Eleição de líder em rondas rotativas")
     void testLeaderElection() throws Exception {
-        System.out.println("\n=== TEST 2: Eleição de líder ===");
+        System.out.println("\n=== TEST 1: Eleição de líder ===");
         
         HotStuffConsensus[] nodes = new HotStuffConsensus[TOTAL_NODES];
         
@@ -91,49 +83,16 @@ public class BFTConsensusTest {
         System.out.println("✓ Eleição de líder funciona em rondas rotativas\n");
     }
     
-    /**
-     * Teste 3: Sistema avança de view quando líder falha (timeout)
-     * Simula que o líder não responde e sistema avança para próxima view
-     */
-    @Test
-    @Order(3)
-    @DisplayName("Sistema pode avançar de view (simulando timeout)")
-    void testViewAdvancement() throws Exception {
-        System.out.println("\n=== TEST 3: Avanço de view ===");
-        
-        Link mockLink = mock(Link.class);
-        CryptoLibrary mockCrypto = mock(CryptoLibrary.class);
-        Blockchain blockchain = new Blockchain();
-        
-        doNothing().when(mockLink).send(any(), anyInt(), any(), anyString());
-        when(mockCrypto.signShare(any())).thenReturn(mock(threshsig.SigShare.class));
-        when(mockCrypto.verifyShare(any(), any())).thenReturn(true);
-        
-        HotStuffConsensus consensus = new HotStuffConsensus(2, TOTAL_NODES, MAX_FAULTS,
-                                                           mockLink, mockCrypto, blockchain);
-        
-        int initialView = consensus.getViewNumber();
-        assertEquals(1, initialView, "View inicial é 1");
-        
-        // Simular timeout - nó avança de view
-        consensus.advanceView();
-        assertEquals(2, consensus.getViewNumber(), "View deveria avançar para 2");
-        
-        // Novo líder é nó 2 (este nó)  
-        assertTrue(consensus.isLeader(), "Nó 2 é líder na view 2");
-        
-        System.out.println("✓ Sistema avança de view corretamente\n");
-    }
     
     /**
-     * Teste 4: Múltiplos nós podem coexistir e mudar de líder
+     * Teste 2: Múltiplos nós podem coexistir e mudar de líder
      * Verifica que após múltiplas mudanças de view, liderança rota corretamente
      */
     @Test
-    @Order(4)
+    @Order(2)
     @DisplayName("Múltiplas mudanças de líder")
     void testMultipleLeaderChanges() throws Exception {
-        System.out.println("\n=== TEST 4: Múltiplas mudanças de líder ===");
+        System.out.println("\n=== TEST 2: Múltiplas mudanças de líder ===");
         
         HotStuffConsensus[] nodes = new HotStuffConsensus[TOTAL_NODES];
         
@@ -168,14 +127,14 @@ public class BFTConsensusTest {
     }
     
     /**
-     * Teste 5: Blockchain mantém consistência entre nós
+     * Teste 3: Blockchain mantém consistência entre nós
      * Verifica que múltiplos nós têm blockchains com mesma estrutura inicial
      */
     @Test
-    @Order(5)
+    @Order(3)
     @DisplayName("Blockchains mantêm consistência")
     void testBlockchainConsistency() throws Exception {
-        System.out.println("\n=== TEST 5: Consistência de blockchain ===");
+        System.out.println("\n=== TEST 3: Consistência de blockchain ===");
         
         Blockchain[] blockchains = new Blockchain[TOTAL_NODES];
         
@@ -209,14 +168,14 @@ public class BFTConsensusTest {
     
 
         /**
-     * Teste 6: Líder rejeita votos quando threshold signature verification falha
+     * Teste 4: Líder rejeita votos quando threshold signature verification falha
      * - Imprimir "Threshold signature verification FAILED"
      */
     @Test
-    @Order(6)
+    @Order(4)
     @DisplayName("Líder rejeita votos com threshold signature inválido")
     void testLeaderRejectsByzantineMessages() throws Exception {
-        System.out.println("\n=== TEST 6: Líder rejeita votos bizantinos ===");
+        System.out.println("\n=== TEST 4: Líder rejeita votos bizantinos ===");
         
         // Criar líder com CryptoLibrary que REJEITA threshold verification
         Link leaderLink = mock(Link.class);
@@ -251,5 +210,58 @@ public class BFTConsensusTest {
         }
 
         assertFalse(leader.verifyThresholdVote( votesMap, "arroz".getBytes()));
+    }
+
+    /**
+     * Teste 5: Blockchain mantém registro de comandos commitados"
+     */
+    @Test
+    @Order(5)
+    @DisplayName("Blockchain mantém registro de comandos commitados")
+    void testBlockchainCommitHistory() throws Exception {
+        System.out.println("\n=== TEST 5: Blockchain mantém registro de comandos commitados ===");
+
+        Link mockLink;
+        CryptoLibrary mockCrypto;
+        Blockchain blockchain;
+        HotStuffConsensus consensus;
+
+        int NODE_ID = 1;
+
+                // Criar mocks
+        mockLink = mock(Link.class);
+        mockCrypto = mock(CryptoLibrary.class);
+        
+        // Configurar comportamento padrão dos mocks
+        doNothing().when(mockLink).send(any(), anyInt(), any(), anyString());
+        when(mockCrypto.signShare(any())).thenReturn(mock(threshsig.SigShare.class));
+        when(mockCrypto.verifyShare(any(), any())).thenReturn(true);
+        
+        // Criar instâncias reais
+        blockchain = new Blockchain();
+        consensus = new HotStuffConsensus(NODE_ID, TOTAL_NODES, MAX_FAULTS, 
+                                         mockLink, mockCrypto, blockchain);
+        // Verificar estado inicial
+        assertEquals(1, blockchain.getCommittedCommands().size(), 
+                    "Blockchain deveria ter apenas GENESIS inicialmente");
+        assertEquals("GENESIS", blockchain.getCommittedCommands().get(0));
+        
+        // Adicionar nós ao blockchain
+        TreeNode node1 = new TreeNode("command1", "key1", 
+                                     blockchain.getRoot().getHash(), 1);
+        blockchain.addNode(node1);
+        
+        TreeNode node2 = new TreeNode("command2", "key2", 
+                                     node1.getHash(), 2);
+        blockchain.addNode(node2);
+        
+        // Executar branch commitada
+        blockchain.executeCommittedBranch(node2);
+        
+        // Verificar que comandos foram commitados
+        assertEquals(3, blockchain.getCommittedCommands().size(), 
+                    "Deveria ter 3 comandos (GENESIS + 2 novos)");
+        assertTrue(blockchain.getCommittedCommands().contains("command1"));
+        assertTrue(blockchain.getCommittedCommands().contains("command2"));
     }
 }

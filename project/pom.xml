@@ -15,6 +15,7 @@
         <module>crypto</module>
         <module>hotstuff</module>
         <module>threshsig</module>
+        <module>test</module>
     </modules>
 
      <properties>

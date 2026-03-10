@@ -27,12 +27,38 @@ import threshsig.SigShare;
  */
 public class ByzantineHotStuffConsensus extends HotStuffConsensus {
 
+    public enum AttackMode {
+        BAD_HASH,           // Proposta com hash errada (líder) + voto forjado (réplica)
+        DUPLICATE_MSG,      // Réplica envia voto duplicado
+        BAD_SHARE           // Réplica assina com dados corrompidos (share inválida)
+    }
+
+    private final AttackMode attackMode;
     Boolean useBadStrings = true; 
     Boolean useBadHash = true;
     
     public ByzantineHotStuffConsensus(int myId, int n, int f, Link link, 
                                      CryptoLibrary crypto, Blockchain blockchain) {
+        this(myId, n, f, link, crypto, blockchain, AttackMode.BAD_HASH);
+    }
+
+    public ByzantineHotStuffConsensus(int myId, int n, int f, Link link,
+                                     CryptoLibrary crypto, Blockchain blockchain,
+                                     AttackMode attackMode) {
         super(myId, n, f, link, crypto, blockchain);
+        this.attackMode = attackMode;
+        // Configurar flags consoante o modo
+        switch (attackMode) {
+            case BAD_HASH:
+                this.useBadStrings = true;
+                this.useBadHash = true;
+                break;
+            case DUPLICATE_MSG:
+            case BAD_SHARE:
+                this.useBadStrings = false;
+                this.useBadHash = false;
+                break;
+        }
     }
     
     // ═══════════════════════════════════════════════════════════
@@ -112,6 +138,21 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
     
     @Override
     public void handlePrepare(Message msg) throws Exception {
+        switch (attackMode) {
+            case BAD_HASH:
+                handlePrepare_BadHash(msg);
+                break;
+            case DUPLICATE_MSG:
+                handlePrepare_Duplicate(msg);
+                break;
+            case BAD_SHARE:
+                handlePrepare_BadShare(msg);
+                break;
+        }
+    }
+
+    // ── ATAQUE BAD_HASH: forja voto com hash diferente ──
+    private void handlePrepare_BadHash(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         TreeNode proposal = hsMsg.getProposal();
         QuorumCertificate justify = hsMsg.getQc();
@@ -120,32 +161,77 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
         currentProposal = proposal;
         
         if (safeNode(proposal, justify)) {
-            // ATAQUE: forjar hash diferente do proposto!
             byte[] realHash = proposal.getHash();
             byte[] forgedHash = new byte[realHash.length];
             System.arraycopy(realHash, 0, forgedHash, 0, realHash.length);
-            forgedHash[0] = (byte)(forgedHash[0] ^ 0xFF); // flip bits do primeiro byte
+            forgedHash[0] = (byte)(forgedHash[0] ^ 0xFF);
             
-            System.out.println("[BYZANTINE REPLICA] ══════════════════════════════");
             System.out.println("[BYZANTINE REPLICA] Forging PREPARE_VOTE with wrong hash!");
-            System.out.println("[BYZANTINE REPLICA] Real hash[0]:   " + realHash[0]);
-            System.out.println("[BYZANTINE REPLICA] Forged hash[0]: " + forgedHash[0]);
             
-            // Assinar com hash forjado (assinatura válida mas sobre dados errados)
             SigShare voteSignature = crypto.signShare(
                 createVoteData(viewNumber, Message.Type.PREPARE_VOTE, forgedHash)
             );
             
             HotStuffMessage voteMsg = new HotStuffMessage();
-            voteMsg.setNodeHash(forgedHash);  // HASH ERRADO!
+            voteMsg.setNodeHash(forgedHash);
             voteMsg.setVoteSignature(voteSignature);
             voteMsg.setViewNumber(viewNumber);
             
             String payload = gson.toJson(voteMsg);
             link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
+        }
+    }
+
+    // ── ATAQUE DUPLICATE_MSG: envia voto correto duas vezes ──
+    private void handlePrepare_Duplicate(Message msg) throws Exception {
+        HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
+        TreeNode proposal = hsMsg.getProposal();
+        QuorumCertificate justify = hsMsg.getQc();
+        
+        blockchain.addNode(proposal);
+        currentProposal = proposal;
+        
+        if (safeNode(proposal, justify)) {
+            SigShare voteSignature = crypto.signShare(
+                createVoteData(viewNumber, Message.Type.PREPARE_VOTE, proposal.getHash())
+            );
             
-            System.out.println("[BYZANTINE REPLICA] Sent FORGED vote to leader " + msg.getSenderId());
-            System.out.println("[BYZANTINE REPLICA] ══════════════════════════════");
+            HotStuffMessage voteMsg = new HotStuffMessage();
+            voteMsg.setNodeHash(proposal.getHash());
+            voteMsg.setVoteSignature(voteSignature);
+            voteMsg.setViewNumber(viewNumber);
+            
+            String payload = gson.toJson(voteMsg);
+
+            System.out.println("[BYZANTINE REPLICA] Sending DUPLICATE PREPARE_VOTE!");
+            link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
+            link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
+        }
+    }
+
+    // ── ATAQUE BAD_SHARE: assina dados corrompidos (share inválida) ──
+    private void handlePrepare_BadShare(Message msg) throws Exception {
+        HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
+        TreeNode proposal = hsMsg.getProposal();
+        QuorumCertificate justify = hsMsg.getQc();
+        
+        blockchain.addNode(proposal);
+        currentProposal = proposal;
+        
+        if (safeNode(proposal, justify)) {
+            // Assina dados ERRADOS mas reporta o hash correto
+            byte[] corruptData = "CORRUPTED_RANDOM_DATA".getBytes();
+            SigShare badSignature = crypto.signShare(corruptData);
+            
+            System.out.println("[BYZANTINE REPLICA] Sending PREPARE_VOTE with BAD SHARE!");
+            
+            HotStuffMessage voteMsg = new HotStuffMessage();
+            voteMsg.setNodeHash(proposal.getHash()); // hash correto
+            voteMsg.setVoteSignature(badSignature);    // mas assinatura sobre dados errados!
+            voteMsg.setViewNumber(viewNumber);
+            
+            String payload = gson.toJson(voteMsg);
+            link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
         }
     }
 }

@@ -247,7 +247,7 @@ public class Node {
                 System.out.println("[NODE] Processing buffered PREPARE for " + key);
                 HotStuffMessage hsmsg = gson.fromJson(buffered.getPayload(), HotStuffMessage.class);
                 String proposedCommand = hsmsg.getProposal().getCommand();
-                if (!proposedCommand.equals(command)) {
+                if (!proposedCommand.equals(stringToAppend)) {
                     System.out.println("[NODE] Byzantine leader detected: command mismatch for " + key);
                     return;
                 }

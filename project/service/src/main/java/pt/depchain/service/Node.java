@@ -39,7 +39,7 @@ public class Node {
         COMPLETED
     }
 
-    private static void startPacemaker(Link link, int nodeId) {
+    private static void startPacemaker(Link link, String nodeId) {
         if (isTimerRunning) return; // Don't restart if already waiting for a proposal
         
         isTimerRunning = true;
@@ -51,7 +51,6 @@ public class Node {
                                    " timed out after request. Leader is likely dead.");
                 isTimerRunning = false;
                 consensus.advanceView(); 
-
                 if (consensus.isLeader()) {
                     proposePendingCommandsIfLeader(link, nodeId); 
                 }
@@ -70,28 +69,26 @@ public class Node {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 1) {
-            System.err.println("Usage: java Node <nodeId>");
+        if (args.length < 3) {
+            System.err.println("Usage: java Node <nodeId> <privateKey> <publicKey>");
             System.exit(1);
-        }  
+        } 
 
-        int nodeId = Integer.parseInt(args[0]);
-        
+        int nodeIdInt = Integer.parseInt(args[0]);
+        String nodeId = args[0];
+        String privateKeyPath = args[1];
+        String publicKeyPath = args[2];
+
         // Initialize crypto and link
-        CryptoLibrary crypto = new CryptoLibrary(
-            "../config/node" + nodeId + ".priv",
-            "../config/node" + nodeId + ".pub",
-            nodeId
-        );
-        Link link = new Link(nodeId, Link.Type.NODE, "../config/membership.json", 
-                            "../config/node" + nodeId + ".priv", 
-                            "../config/node" + nodeId + ".pub");
+        CryptoLibrary crypto = new CryptoLibrary(privateKeyPath, publicKeyPath, nodeId);
+
+        Link link = new Link(nodeId, Link.Type.NODE, "../config/membership.json", privateKeyPath, publicKeyPath);
         
         // Initialize blockchain
         blockchain = new Blockchain();
         
         // Initialize consensus (n=4, f=1 for 4 nodes)
-        consensus = new HotStuffConsensus(nodeId, 4, 1, link, crypto, blockchain);
+        consensus = new HotStuffConsensus(nodeIdInt, 4, 1, link, crypto, blockchain);
         
         // Set up callback for when consensus decides
         consensus.setDecideCallback((decidedNode, view) -> {
@@ -103,7 +100,9 @@ public class Node {
             System.out.println(blockchain.getBlockchainState());
 
             String requestKey = decidedNode.getRequestKey();
-            link.send(Link.Type.CLIENT, 1, Message.Type.REPLY, "message " + decidedNode.getRequestKey() + " committed in view " + (view));
+
+            //Todo implement multiple clients
+            link.send(Link.Type.CLIENT, "client1", Message.Type.REPLY, "message " + requestKey + " SUCCESS in view " + (view));
 
             Message completedMsg = activeRequestsBuffer.remove(requestKey);
             if (completedMsg != null) {
@@ -149,7 +148,7 @@ public class Node {
         }
     }
 
-     private static void handleMessage(Link link, int nodeId, Message msg) throws Exception {
+     private static void handleMessage(Link link, String nodeId, Message msg) throws Exception {
 
         switch (msg.getType()) {
 
@@ -168,7 +167,15 @@ public class Node {
 
                 Message clientMsg = activeRequestsBuffer.get(requestKey);
 
+                RequestState state = pendingClientRequests.get(requestKey);
+
                 if (clientMsg == null) {
+
+                    if (state == RequestState.COMPLETED) {
+                        System.out.println("[NODE] Ignoring stale PREPARE for " + requestKey);
+                        return;
+                    }
+                    
                     System.out.println("[NODE] Missing request " + requestKey + ", buffering PREPARE");
                     bufferedPrepare.put(requestKey, msg);
                     return;
@@ -214,17 +221,17 @@ public class Node {
         }
     }
 
-    private static void handleNewView(Link link, int nodeId, Message msg) throws Exception {
+    private static void handleNewView(Link link, String nodeId, Message msg) throws Exception {
         consensus.handleNewView(msg);
         // if (consensus.isLeader()) {
         //     proposePendingCommandsIfLeader(link, nodeId);
         // }     
     }
 
-    private static void handleAppendRequest(Link link, int nodeId, Message msg) throws Exception {
+    private static void handleAppendRequest(Link link, String nodeId, Message msg) throws Exception {
         String command = msg.getPayload();
         JsonObject payloadJson = JsonParser.parseString(msg.getPayload()).getAsJsonObject();
-        int clientId = payloadJson.get("clientId").getAsInt();
+        String clientId = payloadJson.get("clientId").getAsString();
         int messageId = payloadJson.get("messageId").getAsInt();        
         String stringToAppend = payloadJson.get("text").getAsString();
 
@@ -259,7 +266,7 @@ public class Node {
                 startPacemaker(link, nodeId);
             } else {
                 int leaderId = ((consensus.getViewNumber() - 1) % 4) + 1;
-                link.send(Link.Type.NODE, leaderId, Message.Type.APPEND_STRING, command);
+                link.send(Link.Type.NODE, String.valueOf(leaderId), Message.Type.APPEND_STRING, command);
                 startPacemaker(link, nodeId);
                 System.out.println("[NODE] Request forwarded. Pacemaker started.");
             }
@@ -267,7 +274,7 @@ public class Node {
         }
     }
 
-    private static void proposePendingCommandsIfLeader(Link link, int nodeId) throws Exception {
+    private static void proposePendingCommandsIfLeader(Link link, String nodeId) throws Exception {
 
         // Look for the first pending command
         for (Map.Entry<String, Message> entry : activeRequestsBuffer.entrySet()) {
@@ -276,7 +283,7 @@ public class Node {
 
             if (state == RequestState.PENDING) {
                 JsonObject payloadJson = JsonParser.parseString(entry.getValue().getPayload()).getAsJsonObject();
-                int clientId = payloadJson.get("clientId").getAsInt();
+                String clientId = payloadJson.get("clientId").getAsString();
                 int messageId = payloadJson.get("messageId").getAsInt();
                 String text = payloadJson.get("text").getAsString();
 

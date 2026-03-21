@@ -47,7 +47,9 @@ public class WrongSenderTest {
                 ProcessBuilder pb = new ProcessBuilder(
                         "mvn", "exec:java",
                         "-Dexec.mainClass=pt.depchain.service.Node",
-                        "-Dexec.args=" + i
+                        "-Dexec.args=" + i +
+                        " ../config/node" + i + ".priv" +
+                        " ../config/node" + i + ".pub"
                 );
                 pb.redirectErrorStream(true);
                 Process node = pb.start();
@@ -60,7 +62,7 @@ public class WrongSenderTest {
             ProcessBuilder pb_biz = new ProcessBuilder(
                 "mvn", "exec:java",
                 "-Dexec.mainClass=pt.depchain.service.ByzantineNode",
-                "-Dexec.args=4 wrong-sender"
+                "-Dexec.args=4 ../config/node4.priv ../config/node4.pub wrong-sender"
             );
             pb_biz.redirectErrorStream(true);
             Process node_biz = pb_biz.start();
@@ -73,7 +75,7 @@ public class WrongSenderTest {
             ProcessBuilder pbClient = new ProcessBuilder(
                     "mvn", "exec:java",
                     "-Dexec.mainClass=pt.depchain.client.ClientMain",
-                    "-Dexec.args=1"
+                    "-Dexec.args=client1 ../config/client1.priv ../config/client1.pub"
             );
             pbClient.redirectErrorStream(true);
             client = pbClient.start();
@@ -101,7 +103,7 @@ public class WrongSenderTest {
             boolean found = false;
             long start = System.currentTimeMillis();
             long timeout = 10000; // 10 seconds max
-            String warning = "WARNING: Sender ID 1 does not match socket info /127.0.0.1:9004";
+            String warning = "Signature verification FAILED";
             while (System.currentTimeMillis() - start < timeout) {
                 for (Process node : nodes) {
                     String nodeOutput = readProcessOutputNonBlocking(node);

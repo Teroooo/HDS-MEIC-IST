@@ -4,26 +4,55 @@ import pt.depchain.communication.*;
 import java.net.*;
 import java.util.Scanner;
 import com.google.gson.JsonObject;
+import java.util.Map;
+import java.util.HashMap;
 
 public class ClientMain {
     private static volatile int receivedMessages = 0;
-    
+    private static final Map<String, Integer> responseCounts = new HashMap<>();
+    private static volatile boolean completed = false;
+
     public static void main(String[] args) throws Exception {
-        if (args.length < 1) {
-            System.err.println("Usage: java ClientMain <clientId>");
+        if (args.length < 3) {
+            System.err.println("Usage: java ClientMain <clientId> <privateKey> <publicKey>");
             System.exit(1);
         }  
 
-        int clientId = Integer.parseInt(args[0]);
+        String clientId = args[0];
+        String privateKeyPath = args[1];
+        String publicKeyPath = args[2];
+
         int messageId = 0; 
-        Link link = new Link(clientId, Link.Type.CLIENT, "../config/membership.json", "../config/client" + clientId + ".priv", "../config/client" + clientId + ".pub");
+        Link link = new Link(clientId, Link.Type.CLIENT, "../config/membership.json", privateKeyPath, publicKeyPath);
 
         new Thread(() -> {
             try {
                 while (true) {
                     Message msg = link.receive();
-                    receivedMessages++;
-                    System.out.println("Received from " + msg.getSenderId() + ": " + msg.getPayload()); 
+                    String payload = msg.getPayload();
+                    String[] parts = payload.split(" ");
+                    if (parts.length < 3) continue;
+                    String requestKey = parts[1];
+                    String status = parts[2];
+                    String combined = requestKey + "-" + status;
+
+                    synchronized (responseCounts) {
+                        responseCounts.put(combined, responseCounts.getOrDefault(combined, 0) + 1);
+
+                        int count = responseCounts.get(combined);
+
+                        System.out.println("Received: " + combined + " (" + count + ")");
+
+                        if (count >= 2 && !completed) { 
+                            completed = true;
+
+                            if (status.equals("SUCCESS")) {
+                                System.out.println("String committed");
+                            } else {
+                                System.out.println("String not committed");
+                            }
+                        }
+                    } 
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -48,7 +77,10 @@ public class ClientMain {
                     String text = scanner.nextLine();
                     
                     messageId++;
-                    receivedMessages = 0;  // Reset counter
+                    synchronized (responseCounts) {
+                        responseCounts.clear();
+                    }
+                    completed = false;
                     
                     JsonObject payloadJson = new JsonObject();
                     payloadJson.addProperty("text", text);
@@ -56,7 +88,7 @@ public class ClientMain {
                     payloadJson.addProperty("messageId", messageId);
                     
                     String payload = payloadJson.toString();
-                    int[] replicas = {1,2,3,4};
+                    String[] replicas = {"1","2","3","4"};
                     
                     
                     link.broadcastWithId(replicas, Message.Type.APPEND_STRING, payload, messageId);
@@ -64,11 +96,10 @@ public class ClientMain {
                     System.out.println("\nAppend request sent. Waiting for responses...");
                     
                     // Wait for (n-f) = 3 responses
-                    while (receivedMessages < 3) {
-                        Thread.sleep(100);  
+                    while (!completed) {
+                        Thread.sleep(100);
                     }
                     
-                    System.out.println("String committed!");
                     break;
 
                 case "0":

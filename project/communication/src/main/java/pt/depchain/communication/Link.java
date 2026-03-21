@@ -18,20 +18,20 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Link {
 
     public enum Type { CLIENT, NODE }
-    private final int myId;
+    private final String myId;
     private final Type myType;
     private final Gson gson = new Gson();
     private final DatagramSocket socket;
     private final CryptoLibrary cryptoLibrary;
-    private final Map<Integer, InetSocketAddress> clientAddresses = new HashMap<>();
-    private final Map<Integer, InetSocketAddress> nodeAddresses = new HashMap<>();
+    private final Map<String, InetSocketAddress> clientAddresses = new HashMap<>();
+    private final Map<String, InetSocketAddress> nodeAddresses = new HashMap<>();
     private final Set<String> delivered = Collections.synchronizedSet(new HashSet<>()); 
     private final Map<String, Object[]> pending = new ConcurrentHashMap<>();
     private final Map<String, Long> pendingStatus = new ConcurrentHashMap<>();
     private int nextMessageId = 0;  
     private final long TIMEOUT = 1000; // ms
 
-    public Link(int myId, Type myType, String membershipFile, String myPrivKey, String myPubKey) throws Exception {
+    public Link(String myId, Type myType, String membershipFile, String myPrivKey, String myPubKey) throws Exception {
         this.myId = myId;
         this.myType = myType;
         if(myType == Type.NODE)
@@ -45,7 +45,7 @@ public class Link {
         JsonArray clients = membership.getAsJsonArray("clients");
         for (JsonElement elem : clients) {
             JsonObject obj = elem.getAsJsonObject();
-            int id = obj.get("id").getAsInt();
+            String id = obj.get("id").getAsString();
             String host = obj.get("host").getAsString();
             int port = obj.get("port").getAsInt();
             String pub = obj.get("pub").getAsString();
@@ -57,7 +57,7 @@ public class Link {
         JsonArray nodes = membership.getAsJsonArray("nodes");
         for (JsonElement elem : nodes) {
             JsonObject obj = elem.getAsJsonObject();
-            int id = obj.get("id").getAsInt();
+            String id = obj.get("id").getAsString();
             String host = obj.get("host").getAsString();
             int port = obj.get("port").getAsInt();
             String pub = obj.get("pub").getAsString();
@@ -119,7 +119,7 @@ public class Link {
         return nextMessageId++;
     }
 
-    public void send(Type destType, int destId, Message.Type type, String payload) throws Exception {
+    public void send(Type destType, String destId, Message.Type type, String payload) throws Exception {
         Message msg = new Message(myId, type);
         int localMsgId = getNextMessageId();
         msg.setMessageId(localMsgId);
@@ -145,7 +145,7 @@ public class Link {
         socket.send(new DatagramPacket(data, data.length, dest.getAddress(), dest.getPort()));
     }
 
-    public void sendAs(int spoofedSenderId, Type destType, int destId, Message.Type type, String payload) throws Exception {
+    public void sendAs(String spoofedSenderId, Type destType, String destId, Message.Type type, String payload) throws Exception {
         Message msg = new Message(spoofedSenderId, type);
         int localMsgId = getNextMessageId();
         msg.setMessageId(localMsgId);
@@ -177,35 +177,21 @@ public class Link {
         while (true) {
             socket.receive(packet);
 
-            InetAddress senderAddress = packet.getAddress();
-            int senderPort = packet.getPort();
-            InetSocketAddress senderSocket = new InetSocketAddress(senderAddress, senderPort);
-            
             String json = new String(packet.getData(), 0, packet.getLength());
             Message msg = gson.fromJson(json, Message.class);
 
-            String senderType = "UNKNOWN";
-            int senderId = -1;
+            String senderType;
+            String senderId; // String for client, int for node
 
-            for (var entry : clientAddresses.entrySet()) {
-                if (entry.getValue().equals(senderSocket)) {
-                    senderType = "CLIENT";
-                    senderId = entry.getKey();
-                    break;
-                }
-            }
-            if (senderId == -1) {
-                for (var entry : nodeAddresses.entrySet()) {
-                    if (entry.getValue().equals(senderSocket)) {
-                        senderType = "NODE";
-                        senderId = entry.getKey();
-                        break;
-                    }
-                }
-                if(senderId != msg.getSenderId()){
-                    System.out.println("WARNING: Sender ID " + msg.getSenderId() + " does not match socket info " + senderSocket);
-                    continue;
-                }
+            if (clientAddresses.containsKey(msg.getSenderId())) {
+                senderType = "CLIENT";
+                senderId = msg.getSenderId(); 
+            } else if (nodeAddresses.containsKey(msg.getSenderId())) {
+                senderType = "NODE";
+                senderId = msg.getSenderId(); 
+            } else {
+                System.out.println("Unknown sender: " + msg.getSenderId());
+                continue;
             }
 
             byte[] signature = msg.getSignature();
@@ -218,7 +204,7 @@ public class Link {
 
             // Handle ACKs
             if (msg.getType() == Message.Type.ACK) {
-                int originalSenderId = msg.getReceiver(); 
+                String originalSenderId = msg.getReceiver(); 
                 Type type = senderType.equals("CLIENT") ? Type.CLIENT : Type.NODE;
                 String uniqueId;
                 if (myType == Type.CLIENT) {
@@ -263,8 +249,8 @@ public class Link {
         }
     }
 
-    public void broadcastWithId(int[] replicaIds, Message.Type type, String payload, int messageId) throws Exception {
-        for (int replicaId : replicaIds) {
+    public void broadcastWithId(String[] replicaIds, Message.Type type, String payload, int messageId) throws Exception {
+        for (String replicaId : replicaIds) {
             Message msg = new Message(myId, type);
             msg.setMessageId(messageId);  
             msg.setPayload(payload);
@@ -283,7 +269,7 @@ public class Link {
         }
     }
 
-    private String makeUniqueId(int senderId, int messageId, Type senderType) {
+    private String makeUniqueId(String senderId, int messageId, Type senderType) {
         return senderType + "-" + senderId + "-" + messageId;
     }
 }

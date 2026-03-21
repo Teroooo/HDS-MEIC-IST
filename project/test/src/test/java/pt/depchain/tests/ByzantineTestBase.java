@@ -77,13 +77,18 @@ public abstract class ByzantineTestBase {
                     pb = new ProcessBuilder(
                         "mvn", "exec:java",
                         "-Dexec.mainClass=pt.depchain.service.ByzantineNode",
-                        "-Dexec.args=" + i + " " + attack
+                        "-Dexec.args=" + i +
+                        " ../config/node" + i + ".priv" +
+                        " ../config/node" + i + ".pub" +
+                        " " + attack
                     );
                 } else {
                     pb = new ProcessBuilder(
                         "mvn", "exec:java",
                         "-Dexec.mainClass=pt.depchain.service.Node",
-                        "-Dexec.args=" + i
+                        "-Dexec.args=" + i +
+                        " ../config/node" + i + ".priv" +
+                        " ../config/node" + i + ".pub"
                     );
                 }
                 pb.redirectErrorStream(true);
@@ -124,7 +129,9 @@ public abstract class ByzantineTestBase {
             ProcessBuilder pbClient = new ProcessBuilder(
                 "mvn", "exec:java",
                 "-Dexec.mainClass=pt.depchain.client.ClientMain",
-                "-Dexec.args=1"
+                "-Dexec.args=client1" +
+                " ../config/client1.priv" +
+                " ../config/client1.pub"
             );
             pbClient.redirectErrorStream(true);
             client = pbClient.start();

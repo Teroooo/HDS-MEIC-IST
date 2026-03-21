@@ -40,7 +40,7 @@ public class CryptoLibrary {
     private BigInteger e = null;
 
 
-    public CryptoLibrary(String privateKeyPath, String publicKeyPath, int myId) throws Exception {
+    public CryptoLibrary(String privateKeyPath, String publicKeyPath, String myId) throws Exception {
         this.privateKey = readPrivateKey(privateKeyPath);
         this.publicKey = readPublicKey(publicKeyPath);
         loadGroupKey();
@@ -93,9 +93,10 @@ public class CryptoLibrary {
         }
     }
 
-    private void loadMyKeyShare(int myId) throws Exception {
-        if (myId > 0 && myId <= l) {
-            this.myKey = keyShares[myId - 1];
+    private void loadMyKeyShare(String myId) throws Exception {
+        int id = Integer.parseInt(myId);
+        if (id  > 0 && id  <= l) {
+            this.myKey = keyShares[id  - 1];
         } else {
             throw new IllegalArgumentException("Invalid myId: " + myId);
         }

@@ -47,7 +47,9 @@ public class LeaderCrashAppendTest {
                 ProcessBuilder pb = new ProcessBuilder(
                         "mvn", "exec:java",
                         "-Dexec.mainClass=pt.depchain.service.Node",
-                        "-Dexec.args=" + i
+                        "-Dexec.args=" + i +
+                        " ../config/node" + i + ".priv" +
+                        " ../config/node" + i + ".pub"
                 );
                 pb.redirectErrorStream(true);
                 Process node = pb.start();
@@ -64,7 +66,7 @@ public class LeaderCrashAppendTest {
             ProcessBuilder pbClient = new ProcessBuilder(
                     "mvn", "exec:java",
                     "-Dexec.mainClass=pt.depchain.client.ClientMain",
-                    "-Dexec.args=1"
+                    "-Dexec.args=client1 ../config/client1.priv ../config/client1.pub"
             );
             pbClient.redirectErrorStream(true);
             client = pbClient.start();

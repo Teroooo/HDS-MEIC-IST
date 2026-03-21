@@ -34,7 +34,10 @@ public class Link {
     public Link(int myId, Type myType, String membershipFile, String myPrivKey, String myPubKey) throws Exception {
         this.myId = myId;
         this.myType = myType;
-        this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey);
+        if(myType == Type.NODE)
+            this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey, myId);
+        else
+            this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey);
 
         JsonArray root = JsonParser.parseReader(new FileReader(membershipFile)).getAsJsonArray();
         JsonObject membership = root.get(0).getAsJsonObject();
@@ -102,7 +105,7 @@ public class Link {
                             socket.send(new DatagramPacket(data, data.length, dest.getAddress(), dest.getPort()));
 
                             pendingStatus.put(uniqueId, now);
-                            //System.out.println("Retransmitting message " + msgId + " to " + msg.getReceiver() + " (retry " + meta[1] + ")");
+                            //System.out.println("[LINK] Retransmitting message " + uniqueId + " to " + destType + " " + msg.getReceiver() + " (retry)");
                         }
                     }
                 }
@@ -128,8 +131,8 @@ public class Link {
 
         byte[] data = gson.toJson(msg).getBytes();
         
-        String uniqueId = makeUniqueId(myId, localMsgId);
-        pending.put(uniqueId, new Object[]{msg, destType}); 
+        String uniqueId = makeUniqueId(myId, localMsgId, destType);
+        pending.put(uniqueId, new Object[]{msg, destType});
         pendingStatus.put(uniqueId, System.currentTimeMillis());
 
         InetSocketAddress dest;
@@ -138,7 +141,32 @@ public class Link {
         } else {
             dest = nodeAddresses.get(destId);
         }
-        System.out.println("Sending message to " + destType + " " + destId + " at " + dest);
+        //System.out.println("Sending message to " + destType + " " + destId + " at " + dest);
+        socket.send(new DatagramPacket(data, data.length, dest.getAddress(), dest.getPort()));
+    }
+
+    public void sendAs(int spoofedSenderId, Type destType, int destId, Message.Type type, String payload) throws Exception {
+        Message msg = new Message(spoofedSenderId, type);
+        int localMsgId = getNextMessageId();
+        msg.setMessageId(localMsgId);
+        msg.setPayload(payload);
+        msg.setReceiver(destId);
+
+        msg.setSignature(null);
+        msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
+
+        byte[] data = gson.toJson(msg).getBytes();
+
+        String uniqueId = makeUniqueId(spoofedSenderId, localMsgId, destType);
+        pending.put(uniqueId, new Object[]{msg, destType});
+        pendingStatus.put(uniqueId, System.currentTimeMillis());
+
+        InetSocketAddress dest;
+        if (destType == Type.CLIENT) {
+            dest = clientAddresses.get(destId);
+        } else {
+            dest = nodeAddresses.get(destId);
+        }
         socket.send(new DatagramPacket(data, data.length, dest.getAddress(), dest.getPort()));
     }
 
@@ -152,6 +180,9 @@ public class Link {
             InetAddress senderAddress = packet.getAddress();
             int senderPort = packet.getPort();
             InetSocketAddress senderSocket = new InetSocketAddress(senderAddress, senderPort);
+            
+            String json = new String(packet.getData(), 0, packet.getLength());
+            Message msg = gson.fromJson(json, Message.class);
 
             String senderType = "UNKNOWN";
             int senderId = -1;
@@ -171,11 +202,11 @@ public class Link {
                         break;
                     }
                 }
+                if(senderId != msg.getSenderId()){
+                    System.out.println("WARNING: Sender ID " + msg.getSenderId() + " does not match socket info " + senderSocket);
+                    continue;
+                }
             }
-
-            String json = new String(packet.getData(), 0, packet.getLength());
-            Message msg = gson.fromJson(json, Message.class);
-
 
             byte[] signature = msg.getSignature();
             msg.setSignature(null);
@@ -187,14 +218,33 @@ public class Link {
 
             // Handle ACKs
             if (msg.getType() == Message.Type.ACK) {
-                String uniqueId = makeUniqueId(msg.getSenderId(), msg.getMessageId());
-                pending.remove(uniqueId);
-                pendingStatus.remove(uniqueId);
+                int originalSenderId = msg.getReceiver(); 
+                Type type = senderType.equals("CLIENT") ? Type.CLIENT : Type.NODE;
+                String uniqueId;
+                if (myType == Type.CLIENT) {
+                    // For client broadcasts, we added "-replicaId" to the uniqueId
+                    uniqueId = makeUniqueId(originalSenderId, msg.getMessageId(), type) + "-" + msg.getSenderId();
+                } else {
+                    // Node-to-node messages use the old uniqueId
+                    uniqueId = makeUniqueId(originalSenderId, msg.getMessageId(), type);
+                }
+
+                if (pending.remove(uniqueId) != null) {
+                    pendingStatus.remove(uniqueId);
+                    //System.out.println("[LINK] ACK processed, removed from pending: " + uniqueId);
+                } else {
+                    System.out.println("[LINK] ACK received but could not find pending message: " + uniqueId);
+                }
                 continue; 
             }
 
-            String uniqueId = makeUniqueId(msg.getSenderId(), msg.getMessageId());
-            if (delivered.contains(uniqueId)) continue;
+            Type senderTypeEnum = senderType.equals("CLIENT") ? Type.CLIENT : Type.NODE;
+            String uniqueId = makeUniqueId(msg.getSenderId(), msg.getMessageId(), senderTypeEnum);
+            if (delivered.contains(uniqueId)) {
+                System.out.println("[LINK] Duplicate received, ignoring: " + uniqueId 
+                    + " type=" + msg.getType() + " from " + msg.getSenderId());
+                continue;
+            }
             delivered.add(uniqueId);
 
             Message ack = new Message(myId, Message.Type.ACK);
@@ -213,7 +263,27 @@ public class Link {
         }
     }
 
-    private String makeUniqueId(int senderId, int messageId) {
-        return senderId + "-" + messageId;
+    public void broadcastWithId(int[] replicaIds, Message.Type type, String payload, int messageId) throws Exception {
+        for (int replicaId : replicaIds) {
+            Message msg = new Message(myId, type);
+            msg.setMessageId(messageId);  
+            msg.setPayload(payload);
+            msg.setReceiver(replicaId);
+
+            msg.setSignature(null);
+            msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
+
+            byte[] data = gson.toJson(msg).getBytes();
+            String uniqueId = makeUniqueId(myId, messageId, Type.NODE)  + "-" + replicaId;  
+            pending.put(uniqueId, new Object[]{msg, Type.NODE});
+            pendingStatus.put(uniqueId, System.currentTimeMillis());
+
+            InetSocketAddress dest = nodeAddresses.get(replicaId);
+            socket.send(new DatagramPacket(data, data.length, dest.getAddress(), dest.getPort()));
+        }
+    }
+
+    private String makeUniqueId(int senderId, int messageId, Type senderType) {
+        return senderType + "-" + senderId + "-" + messageId;
     }
 }

@@ -18,14 +18,14 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.Gson;
 
-public class Node {
+public class ByzantineNode {
     
-    private static HotStuffConsensus consensus;
+    private static ByzantineHotStuffConsensus consensus;
     private static Blockchain blockchain;
     private static Map<String, RequestState> pendingClientRequests = new HashMap<>();
     
     private static final ScheduledExecutorService pacemaker = Executors.newSingleThreadScheduledExecutor();
-    private static ScheduledFuture<?> timeoutTask; // <--- Add this line
+    private static ScheduledFuture<?> timeoutTask; 
     private static final long VIEW_TIMEOUT_MS = 10000;
     private static boolean isTimerRunning = false;
 
@@ -71,11 +71,27 @@ public class Node {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
-            System.err.println("Usage: java Node <nodeId>");
+            System.err.println("Usage: java ByzantineNode <nodeId> [attack-mode]");
+            System.err.println("  attack-mode: bad-hash | duplicate-msg | bad-share | wrong-sender");
             System.exit(1);
         }  
 
         int nodeId = Integer.parseInt(args[0]);
+
+        // Parse attack mode
+        ByzantineHotStuffConsensus.AttackMode attackMode = ByzantineHotStuffConsensus.AttackMode.BAD_HASH;
+        if (args.length >= 2) {
+            switch (args[1]) {
+                case "bad-hash":      attackMode = ByzantineHotStuffConsensus.AttackMode.BAD_HASH; break;
+                case "duplicate-msg": attackMode = ByzantineHotStuffConsensus.AttackMode.DUPLICATE_MSG; break;
+                case "bad-share":     attackMode = ByzantineHotStuffConsensus.AttackMode.BAD_SHARE; break;
+                case "wrong-sender":  attackMode = ByzantineHotStuffConsensus.AttackMode.WRONG_SENDER; break;
+                default:
+                    System.err.println("Unknown attack mode: " + args[1]);
+                    System.exit(1);
+            }
+        }
+        System.out.println("[BYZANTINE] Node " + nodeId + " starting with attack mode: " + attackMode);
         
         // Initialize crypto and link
         CryptoLibrary crypto = new CryptoLibrary(
@@ -91,7 +107,7 @@ public class Node {
         blockchain = new Blockchain();
         
         // Initialize consensus (n=4, f=1 for 4 nodes)
-        consensus = new HotStuffConsensus(nodeId, 4, 1, link, crypto, blockchain);
+        consensus = new ByzantineHotStuffConsensus(nodeId, 4, 1, link, crypto, blockchain, attackMode);
         
         // Set up callback for when consensus decides
         consensus.setDecideCallback((decidedNode, view) -> {

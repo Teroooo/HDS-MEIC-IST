@@ -4,15 +4,24 @@ import pt.depchain.communication.*;
 import pt.depchain.crypto.CryptoLibrary;
 import pt.depchain.hotstuff.*;
 import java.net.*;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+
+import javax.crypto.SecretKey;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -33,6 +42,8 @@ public class Node {
 
     private static Map<String, Message> bufferedPrepare = new HashMap<>();
     private static final Gson gson = new Gson();
+
+    private static CryptoLibrary crypto;
 
     enum RequestState {
         PENDING,
@@ -80,75 +91,90 @@ public class Node {
         String publicKeyPath = args[2];
 
         // Initialize crypto and link
-        CryptoLibrary crypto = new CryptoLibrary(privateKeyPath, publicKeyPath, nodeId);
+        crypto = new CryptoLibrary(privateKeyPath, publicKeyPath, nodeId);
 
-        Link link = new Link(nodeId, Link.Type.NODE, "../config/membership.json", privateKeyPath, publicKeyPath);
-        
+        Link link = new Link(nodeId, Link.Type.NODE, "../config/membership.json", privateKeyPath, publicKeyPath, crypto);
+
+        // ✅ 1. Start receiver thread FIRST
+        startReceiverThread(link, nodeId, crypto);
+
+        // ✅ 2. Wait for nodes to boot
+        System.out.println("[NODE] Waiting for nodes to start...");
+        Thread.sleep(10000);
+
+        // ✅ 3. Start key exchange
+        System.out.println("[NODE] Starting key exchange...");
+        initiateKeyExchange(link, nodeId);
+
+        // ✅ 4. Wait until all symmetric keys are established
+        while (crypto.getSymmetricKeys().size() < 4) {
+            System.out.println("[NODE] Waiting for key exchange to complete. Current keys: " 
+                + crypto.getSymmetricKeys().keySet());
+            Thread.sleep(2000);
+        }
+
+        System.out.println("[NODE] Key exchange completed.");
+
         // Initialize blockchain
         blockchain = new Blockchain();
-        
-        // Initialize consensus (n=4, f=1 for 4 nodes)
+
+        // Initialize consensus
         consensus = new HotStuffConsensus(nodeIdInt, 4, 1, link, crypto, blockchain);
-        
-        // Set up callback for when consensus decides
+
+        // Set up callback
         consensus.setDecideCallback((decidedNode, view) -> {
-            stopPacemaker(); // Stop the timer
+            stopPacemaker();
             System.out.println("[NODE] Decision reached at view " + view);
 
-            // Execute the committed branch
             blockchain.executeCommittedBranch(decidedNode);
             System.out.println(blockchain.getBlockchainState());
 
             String requestKey = decidedNode.getRequestKey();
 
-            //Todo implement multiple clients
-            link.send(Link.Type.CLIENT, "client1", Message.Type.REPLY, "message " + requestKey + " SUCCESS in view " + (view));
+            link.send(Link.Type.CLIENT, "client1", Message.Type.REPLY,
+                    "message " + requestKey + " SUCCESS in view " + view);
 
             Message completedMsg = activeRequestsBuffer.remove(requestKey);
             if (completedMsg != null) {
                 pendingClientRequests.put(requestKey, RequestState.COMPLETED);
-                System.out.println("[NODE] Request " + requestKey + " completed: " + decidedNode.getCommand());
-            } else {
-                System.out.println("[NODE] Decided command " + requestKey + " not found in pending buffer");
             }
 
             try {
                 boolean hasPending = pendingClientRequests.values()
-                                    .stream()
-                                    .anyMatch(s -> s == RequestState.PENDING);
+                        .stream()
+                        .anyMatch(s -> s == RequestState.PENDING);
 
                 if (hasPending) {
                     if (consensus.isLeader()) {
                         proposePendingCommandsIfLeader(link, nodeId);
                     } else {
-                        // Wait for leader proposal
                         startPacemaker(link, nodeId);
-                        System.out.println("[NODE] Pending requests exist. Waiting for leader proposal.");
                     }
                 }
             } catch (Exception e) {
                 e.printStackTrace();
             }
-      
-            // Notify clients (in future implementation)
-            // For now, just log the decision
         });
 
         System.out.println("Node " + nodeId + " initialized.");
-        System.out.println("Blockchain initialized with genesis block.");
-        System.out.println("Starting consensus protocol...\n");
-        
-        // Start first view
         consensus.startView();
 
-        // Message handling loop
-        while (true) {
-            Message msg = link.receive();
-            handleMessage(link, nodeId, msg);          
-        }
     }
 
-     private static void handleMessage(Link link, String nodeId, Message msg) throws Exception {
+    private static void startReceiverThread(Link link, String nodeId, CryptoLibrary crypto) {
+        new Thread(() -> {
+            while (true) {
+                try {
+                    Message msg = link.receive();
+                    handleMessage(link, nodeId, msg, crypto);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }).start();
+    }
+
+     private static void handleMessage(Link link, String nodeId, Message msg, CryptoLibrary crypto) throws Exception {
 
         switch (msg.getType()) {
 
@@ -215,7 +241,12 @@ public class Node {
             case DECIDE:
                 consensus.handleDecide(msg);
                 break;
-
+            case KEY_EXCHANGE:
+                handleKeyExchange(link, crypto, msg);
+                break;
+            case KEY_EXCHANGE_REPLY:
+                handleKeyExchangeReply(msg, crypto);
+                break;
             default:
                 System.out.println("[NODE] Unknown message type from " + msg.getSenderId());
         }
@@ -295,4 +326,53 @@ public class Node {
             }
         }
     }
+
+    public static PublicKey stringToPublicKey(String keyString) throws Exception {
+        byte[] keyBytes = Base64.getDecoder().decode(keyString);
+        X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
+        KeyFactory kf = KeyFactory.getInstance("RSA");
+        return kf.generatePublic(spec);
+    }
+
+    private static void handleKeyExchange(Link link, CryptoLibrary crypto, Message msg) throws Exception {
+        String senderId = msg.getSenderId();
+        String senderPublicKeyString = msg.getPayload();
+
+        // Generate symmetric key for this node pair
+        SecretKey aesKey = crypto.generateAESKey();
+
+        // Encrypt AES key with sender's public key
+        String encryptedKey = crypto.encryptAESKey(aesKey, stringToPublicKey(senderPublicKeyString));
+
+        // Send it back
+        link.send(Link.Type.NODE, senderId, Message.Type.KEY_EXCHANGE_REPLY, encryptedKey);
+
+        crypto.addSymmetricKey(senderId, aesKey);
+    }
+
+    private static void handleKeyExchangeReply(Message msg, CryptoLibrary crypto) throws Exception {
+        String senderId = msg.getSenderId();
+        String encryptedKey = msg.getPayload();
+
+        SecretKey aesKey = crypto.decryptAESKey(encryptedKey);
+        crypto.addSymmetricKey(senderId, aesKey);
+    }
+
+    private static void initiateKeyExchange(Link link, String nodeId) {
+        System.out.println(crypto);
+        String publicKey = Base64.getEncoder().encodeToString(crypto.getMyPublicKey().getEncoded());
+
+        String[] replicaIds = new String[]{"1", "2", "3", "4"};
+
+        try {
+            for (String replicaId : replicaIds) {
+                if (Integer.parseInt(nodeId) <= Integer.parseInt(replicaId)) {
+                    link.send(Link.Type.NODE, replicaId, Message.Type.KEY_EXCHANGE, publicKey);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
 }

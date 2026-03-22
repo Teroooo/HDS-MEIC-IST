@@ -9,6 +9,12 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.HashMap;
 import java.util.Map;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+
 import java.lang.reflect.Field;
 
 import com.google.gson.Gson;
@@ -28,7 +34,6 @@ public class CryptoLibrary {
 
     private final HashMap<String, PublicKey> publicKeys = new HashMap<>();
 
-
     public int k = 3;
     public int l = 4;
 
@@ -39,6 +44,7 @@ public class CryptoLibrary {
     private BigInteger n = null;
     private BigInteger e = null;
 
+    private final Map<String, SecretKey> symmetricKeys = new HashMap<>();
 
     public CryptoLibrary(String privateKeyPath, String publicKeyPath, String myId) throws Exception {
         this.privateKey = readPrivateKey(privateKeyPath);
@@ -186,5 +192,64 @@ public class CryptoLibrary {
         return SigShare.verify(data, sigShares, 3, 4, n, e);
     }
 
+    public SecretKey generateAESKey() throws Exception {
+        KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+        keyGen.init(128); // or 256 if allowed
+        return keyGen.generateKey();
+    }
 
+    public String encryptAESKey(SecretKey aesKey, PublicKey publicKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("RSA");
+        cipher.init(Cipher.ENCRYPT_MODE, publicKey);
+
+        byte[] encryptedBytes = cipher.doFinal(aesKey.getEncoded());
+
+        return Base64.getEncoder().encodeToString(encryptedBytes);
+    }
+
+    public SecretKey decryptAESKey(String encryptedKey) throws Exception {
+        byte[] encryptedBytes = Base64.getDecoder().decode(encryptedKey);
+
+        Cipher cipher = Cipher.getInstance("RSA");
+        cipher.init(Cipher.DECRYPT_MODE, privateKey);
+
+        byte[] decodedKey = cipher.doFinal(encryptedBytes);
+
+        return new SecretKeySpec(decodedKey, 0, decodedKey.length, "AES");
+    }
+
+    public void addSymmetricKey(String nodeId, SecretKey key) {
+        symmetricKeys.put(nodeId, key);
+    }
+
+    public Map<String, SecretKey> getSymmetricKeys() {
+        return symmetricKeys;
+    }
+
+    public SecretKey getSymmetricKey(String nodeId) {
+        return symmetricKeys.get(nodeId);
+    }
+
+    public byte[] encryptAES(byte[] data, String nodeId) throws Exception {
+        SecretKey key = symmetricKeys.get(nodeId);
+
+        if (key == null) {
+            System.out.println("No symmetric key for node: " + nodeId);
+            
+        }
+        Cipher cipher = Cipher.getInstance("AES");
+        cipher.init(Cipher.ENCRYPT_MODE, key);
+        return cipher.doFinal(data);
+    }
+
+    public byte[] decryptAES(byte[] encryptedData, String nodeId) throws Exception {
+        SecretKey key = symmetricKeys.get(nodeId);
+
+        if (key == null) {
+            System.out.println("No symmetric key for node: " + nodeId);
+        }
+        Cipher cipher = Cipher.getInstance("AES");
+        cipher.init(Cipher.DECRYPT_MODE, key);
+        return cipher.doFinal(encryptedData);
+    }
 }

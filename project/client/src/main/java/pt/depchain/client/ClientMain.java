@@ -1,6 +1,8 @@
 package pt.depchain.client;
 
 import pt.depchain.communication.*;
+import pt.depchain.crypto.CryptoLibrary;
+
 import java.net.*;
 import java.util.Scanner;
 import com.google.gson.JsonObject;
@@ -23,7 +25,9 @@ public class ClientMain {
         String publicKeyPath = args[2];
 
         int messageId = 0; 
-        Link link = new Link(clientId, Link.Type.CLIENT, "../config/membership.json", privateKeyPath, publicKeyPath);
+
+        CryptoLibrary crypto = new CryptoLibrary(privateKeyPath, publicKeyPath);
+        Link link = new Link(clientId, Link.Type.CLIENT, "../config/membership.json", privateKeyPath, publicKeyPath, crypto);
 
         new Thread(() -> {
             try {

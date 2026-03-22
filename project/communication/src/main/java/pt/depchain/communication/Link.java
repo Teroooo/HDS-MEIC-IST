@@ -8,6 +8,7 @@ import com.google.gson.JsonElement;
 
 
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.io.*;
 import java.security.*;
 import java.util.*;
@@ -31,13 +32,10 @@ public class Link {
     private int nextMessageId = 0;  
     private final long TIMEOUT = 1000; // ms
 
-    public Link(String myId, Type myType, String membershipFile, String myPrivKey, String myPubKey) throws Exception {
+    public Link(String myId, Type myType, String membershipFile, String myPrivKey, String myPubKey, CryptoLibrary crypto) throws Exception {
         this.myId = myId;
         this.myType = myType;
-        if(myType == Type.NODE)
-            this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey, myId);
-        else
-            this.cryptoLibrary = new CryptoLibrary(myPrivKey, myPubKey);
+        this.cryptoLibrary = crypto;
 
         JsonArray root = JsonParser.parseReader(new FileReader(membershipFile)).getAsJsonArray();
         JsonObject membership = root.get(0).getAsJsonObject();
@@ -125,9 +123,19 @@ public class Link {
         msg.setMessageId(localMsgId);
         msg.setPayload(payload);
         msg.setReceiver(destId);
-
         msg.setSignature(null);
-        msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
+        if (destType == Type.CLIENT || myType == Type.CLIENT){
+            msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
+        }
+        else{
+                    // Encrypt payload ONLY for NODE
+                if (type != Message.Type.KEY_EXCHANGE && type != Message.Type.ACK && type != Message.Type.KEY_EXCHANGE_REPLY) {
+                    byte[] encryptedBytes = cryptoLibrary.encryptAES(payload.getBytes(), destId);
+                    String encryptedPayload = Base64.getEncoder().encodeToString(encryptedBytes);
+                    msg.setPayload(encryptedPayload);
+                }
+        }
+
 
         byte[] data = gson.toJson(msg).getBytes();
         
@@ -151,13 +159,21 @@ public class Link {
         msg.setMessageId(localMsgId);
         msg.setPayload(payload);
         msg.setReceiver(destId);
-
         msg.setSignature(null);
-        msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
+        if (destType == Type.CLIENT){
+            msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
+        }
+
+        // Encrypt payload ONLY for NODE
+        if (destType == Type.NODE && type != Message.Type.KEY_EXCHANGE && type != Message.Type.ACK && type != Message.Type.KEY_EXCHANGE_REPLY) {
+            byte[] encryptedBytes = cryptoLibrary.encryptAES(payload.getBytes(), destId);
+            String encryptedPayload = Base64.getEncoder().encodeToString(encryptedBytes);
+            msg.setPayload(encryptedPayload);
+        }
 
         byte[] data = gson.toJson(msg).getBytes();
-
-        String uniqueId = makeUniqueId(spoofedSenderId, localMsgId, destType);
+        
+        String uniqueId = makeUniqueId(myId, localMsgId, destType);
         pending.put(uniqueId, new Object[]{msg, destType});
         pendingStatus.put(uniqueId, System.currentTimeMillis());
 
@@ -167,6 +183,7 @@ public class Link {
         } else {
             dest = nodeAddresses.get(destId);
         }
+        //System.out.println("Sending message to " + destType + " " + destId + " at " + dest);
         socket.send(new DatagramPacket(data, data.length, dest.getAddress(), dest.getPort()));
     }
 
@@ -194,13 +211,24 @@ public class Link {
                 continue;
             }
 
-            byte[] signature = msg.getSignature();
-            msg.setSignature(null);
-            String jsonToVerify = gson.toJson(msg);
-            if (!cryptoLibrary.verify(jsonToVerify.getBytes(), signature, String.valueOf((senderType + "-" + senderId)))) {
-                System.out.println("Signature verification FAILED from " + senderType + " " + senderId);
-                continue;
+            // Decrypt payload if it's a NODE message
+            if (myType == Type.NODE && "NODE".equals(senderType) && msg.getType() != Message.Type.KEY_EXCHANGE && msg.getType() != Message.Type.ACK && msg.getType() != Message.Type.KEY_EXCHANGE_REPLY) {
+                byte[] encryptedBytes = Base64.getDecoder().decode(msg.getPayload());
+                byte[] decryptedBytes = cryptoLibrary.decryptAES(encryptedBytes, msg.getSenderId());
+                String decryptedPayload = new String(decryptedBytes, StandardCharsets.UTF_8);
+                msg.setPayload(decryptedPayload);
             }
+
+            if(myType.equals("CLIENT") || senderType.equals("CLIENT")){
+                byte[] signature = msg.getSignature();
+                msg.setSignature(null);
+                String jsonToVerify = gson.toJson(msg);
+                if (!cryptoLibrary.verify(jsonToVerify.getBytes(), signature, String.valueOf((senderType + "-" + senderId)))) {
+                    System.out.println("Signature verification FAILED from " + senderType + " " + senderId);
+                    continue;
+                }
+            }
+
 
             // Handle ACKs
             if (msg.getType() == Message.Type.ACK) {

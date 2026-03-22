@@ -99,7 +99,7 @@ public class ByzantineNode {
         // Initialize crypto and link
         CryptoLibrary crypto = new CryptoLibrary(privateKeyPath, publicKeyPath, nodeId);
 
-        Link link = new Link(nodeId, Link.Type.NODE, "../config/membership.json", privateKeyPath, publicKeyPath);
+        Link link = new Link(nodeId, Link.Type.NODE, "../config/membership.json", privateKeyPath, publicKeyPath, crypto);
         
         // Initialize blockchain
         blockchain = new Blockchain();

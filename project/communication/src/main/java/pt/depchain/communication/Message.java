@@ -23,7 +23,9 @@ public class Message implements Serializable {
         PRE_COMMIT, PRE_COMMIT_VOTE,
         COMMIT, COMMIT_VOTE,
         DECIDE,
-        REPLY
+        REPLY,
+        KEY_EXCHANGE,
+        KEY_EXCHANGE_REPLY
     }
 
     public Message(String senderId, Type type) {

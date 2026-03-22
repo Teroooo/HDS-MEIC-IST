@@ -12,12 +12,18 @@ mvn clean install -DskipTests
 
 Run Client: 
 ```
-mvn exec:java "-Dexec.mainClass=pt.depchain.client.ClientMain" "-Dexec.args=\<id\>"
+mvn exec:java "-Dexec.mainClass=pt.depchain.client.ClientMain" "-Dexec.args=<clientid> <PrivKey_Path> <PubKey_Path>"
+
+Example:
+mvn exec:java "-Dexec.mainClass=pt.depchain.client.ClientMain" "-Dexec.args=client1 ../config/client1.priv ../config/client1.pub"
 ```
 
 Run Safe Node: 
 ```
-mvn exec:java "-Dexec.mainClass=pt.depchain.service.Node" "-Dexec.args=\<id\>"  
+mvn exec:java "-Dexec.mainClass=pt.depchain.service.Node" "-Dexec.args=<Nodeid> <PrivKey_Path> <PubKey_Path>"  
+
+Example:
+mvn exec:java "-Dexec.mainClass=pt.depchain.service.Node" "-Dexec.args=1 ../config/node1.priv ../config/node1.pub" 
 ```
 
 Run Byzantine Node: 

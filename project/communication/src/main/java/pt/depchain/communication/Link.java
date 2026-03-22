@@ -124,16 +124,15 @@ public class Link {
         msg.setPayload(payload);
         msg.setReceiver(destId);
         msg.setSignature(null);
-        if (destType == Type.CLIENT || myType == Type.CLIENT){
+        boolean noToEncrypt = (type == Message.Type.KEY_EXCHANGE || type == Message.Type.ACK || type == Message.Type.KEY_EXCHANGE_REPLY);
+        if (destType == Type.CLIENT || myType == Type.CLIENT || noToEncrypt) {
             msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
         }
         else{
-                    // Encrypt payload ONLY for NODE
-                if (type != Message.Type.KEY_EXCHANGE && type != Message.Type.ACK && type != Message.Type.KEY_EXCHANGE_REPLY) {
-                    byte[] encryptedBytes = cryptoLibrary.encryptAES(payload.getBytes(), destId);
-                    String encryptedPayload = Base64.getEncoder().encodeToString(encryptedBytes);
-                    msg.setPayload(encryptedPayload);
-                }
+            // Encrypt payload ONLY for NODE
+            byte[] encryptedBytes = cryptoLibrary.encryptAES(payload.getBytes(), destId);
+            String encryptedPayload = Base64.getEncoder().encodeToString(encryptedBytes);
+            msg.setPayload(encryptedPayload);
         }
 
 
@@ -163,7 +162,7 @@ public class Link {
         if (destType == Type.CLIENT){
             msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
         }
-
+        
         // Encrypt payload ONLY for NODE
         if (destType == Type.NODE && type != Message.Type.KEY_EXCHANGE && type != Message.Type.ACK && type != Message.Type.KEY_EXCHANGE_REPLY) {
             byte[] encryptedBytes = cryptoLibrary.encryptAES(payload.getBytes(), destId);
@@ -211,15 +210,15 @@ public class Link {
                 continue;
             }
 
+            boolean ToDecrypt = (msg.getType() != Message.Type.KEY_EXCHANGE && msg.getType() != Message.Type.ACK && msg.getType() != Message.Type.KEY_EXCHANGE_REPLY);
             // Decrypt payload if it's a NODE message
-            if (myType == Type.NODE && "NODE".equals(senderType) && msg.getType() != Message.Type.KEY_EXCHANGE && msg.getType() != Message.Type.ACK && msg.getType() != Message.Type.KEY_EXCHANGE_REPLY) {
+            if (myType == Type.NODE && "NODE".equals(senderType) && ToDecrypt) {
                 byte[] encryptedBytes = Base64.getDecoder().decode(msg.getPayload());
                 byte[] decryptedBytes = cryptoLibrary.decryptAES(encryptedBytes, msg.getSenderId());
                 String decryptedPayload = new String(decryptedBytes, StandardCharsets.UTF_8);
                 msg.setPayload(decryptedPayload);
             }
-
-            if(myType.equals("CLIENT") || senderType.equals("CLIENT")){
+            else if(myType.equals("CLIENT") || senderType.equals("CLIENT") || !ToDecrypt){
                 byte[] signature = msg.getSignature();
                 msg.setSignature(null);
                 String jsonToVerify = gson.toJson(msg);
@@ -228,7 +227,6 @@ public class Link {
                     continue;
                 }
             }
-
 
             // Handle ACKs
             if (msg.getType() == Message.Type.ACK) {

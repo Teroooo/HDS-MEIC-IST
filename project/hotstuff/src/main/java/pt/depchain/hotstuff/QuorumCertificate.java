@@ -20,7 +20,7 @@ public class QuorumCertificate implements Serializable {
     private final QCType type;
     private final int viewNumber;
     private final byte[] nodeHash;
-    private final List<Integer> voterIds;
+    private final List<String> voterIds;
     private final List<SigShare> signatures;
     
     public QuorumCertificate(QCType type, int viewNumber, byte[] nodeHash) {
@@ -31,7 +31,7 @@ public class QuorumCertificate implements Serializable {
         this.signatures = new ArrayList<>();
     }
     
-    public void addVote(int voterId, SigShare signature) {
+    public void addVote(String voterId, SigShare signature) {
         if (!voterIds.contains(voterId)) {
             voterIds.add(voterId);
             signatures.add(signature);
@@ -50,7 +50,7 @@ public class QuorumCertificate implements Serializable {
         return nodeHash;
     }
     
-    public List<Integer> getVoterIds() {
+    public List<String> getVoterIds() {
         return voterIds;
     }
     

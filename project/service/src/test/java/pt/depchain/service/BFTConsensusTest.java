@@ -50,7 +50,7 @@ public class BFTConsensusTest {
             CryptoLibrary mockCrypto = mock(CryptoLibrary.class);
             Blockchain blockchain = new Blockchain();
             
-            doNothing().when(mockLink).send(any(), anyInt(), any(), anyString());
+            doNothing().when(mockLink).send(any(), anyString(), any(), anyString());
             when(mockCrypto.signShare(any())).thenReturn(mock(threshsig.SigShare.class));
             when(mockCrypto.verifyShare(any(), any())).thenReturn(true);
             
@@ -101,7 +101,7 @@ public class BFTConsensusTest {
             CryptoLibrary mockCrypto = mock(CryptoLibrary.class);
             Blockchain blockchain = new Blockchain();
             
-            doNothing().when(mockLink).send(any(), anyInt(), any(), anyString());
+            doNothing().when(mockLink).send(any(), anyString(), any(), anyString());
             when(mockCrypto.signShare(any())).thenReturn(mock(threshsig.SigShare.class));
             when(mockCrypto.verifyShare(any(), any())).thenReturn(true);
             
@@ -182,7 +182,7 @@ public class BFTConsensusTest {
         CryptoLibrary leaderCrypto = mock(CryptoLibrary.class);
         Blockchain leaderBlockchain = new Blockchain();
         
-        doNothing().when(leaderLink).send(any(), anyInt(), any(), anyString());
+        doNothing().when(leaderLink).send(any(), anyString(), any(), anyString());
         
         // Mock signShare para o líder poder assinar suas próprias mensagens
         when(leaderCrypto.signShare(any())).thenReturn(mock(threshsig.SigShare.class));
@@ -196,16 +196,17 @@ public class BFTConsensusTest {
         leader.startView();
         leader.addCommand("arroz", "test-msg-1");
         
-        Map<Integer, SigShare> votesMap = new HashMap<Integer, SigShare>();
+        Map<String, SigShare> votesMap = new HashMap<String, SigShare>();
 
         for (int i = 1; i <= TOTAL_NODES; i++) {
-            CryptoLibrary cript = new CryptoLibrary("../config/node"+ i +".priv", "../config/node"+i+".pub", i);
+            String iStr = String.valueOf(i);
+            CryptoLibrary cript = new CryptoLibrary("../config/node"+ i +".priv", "../config/node"+i+".pub", iStr);
             SigShare s;
             if(i<3){
-                votesMap.put(i, cript.signShare("arroz".getBytes()));
+                votesMap.put(iStr, cript.signShare("arroz".getBytes()));
             }
             else{
-                votesMap.put(i, cript.signShare("esparguete".getBytes()));
+                votesMap.put(iStr, cript.signShare("esparguete".getBytes()));
             }
         }
 
@@ -233,7 +234,7 @@ public class BFTConsensusTest {
         mockCrypto = mock(CryptoLibrary.class);
         
         // Configurar comportamento padrão dos mocks
-        doNothing().when(mockLink).send(any(), anyInt(), any(), anyString());
+        doNothing().when(mockLink).send(any(), anyString(), any(), anyString());
         when(mockCrypto.signShare(any())).thenReturn(mock(threshsig.SigShare.class));
         when(mockCrypto.verifyShare(any(), any())).thenReturn(true);
         

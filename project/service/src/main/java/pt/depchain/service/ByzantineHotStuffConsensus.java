@@ -124,7 +124,7 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
         
         String payload = gson.toJson(hsMsg);
         for (int nodeId = 1; nodeId <= n; nodeId++) {
-            link.send(Link.Type.NODE, nodeId, Message.Type.PREPARE, payload);
+            link.send(Link.Type.NODE, String.valueOf(nodeId), Message.Type.PREPARE, payload);
         }
         System.out.println("[BYZANTINE LEADER] Sent CORRUPTED PREPARE to all nodes");
         System.out.println("[BYZANTINE LEADER] ══════════════════════════════");
@@ -260,7 +260,7 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
             voteMsg.setViewNumber(viewNumber);
             
             String payload = gson.toJson(voteMsg);
-            link.sendAs(fakeSenderId, Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
+            link.sendAs(String.valueOf(fakeSenderId), Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
         }
     }
 }

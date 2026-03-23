@@ -39,7 +39,7 @@ public class ByzantineNode {
         COMPLETED
     }
 
-    private static void startPacemaker(Link link, int nodeId) {
+    private static void startPacemaker(Link link, String nodeId) {
         if (isTimerRunning) return; // Don't restart if already waiting for a proposal
         
         isTimerRunning = true;
@@ -70,56 +70,53 @@ public class ByzantineNode {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 1) {
-            System.err.println("Usage: java ByzantineNode <nodeId> [attack-mode]");
+        if (args.length < 3) {
+            System.err.println("Usage: java ByzantineNode <nodeId> <privateKey> <publicKey> [attack-mode]");
             System.err.println("  attack-mode: bad-hash | duplicate-msg | bad-share | wrong-sender");
             System.exit(1);
         }  
-
-        int nodeId = Integer.parseInt(args[0]);
+        
+        int nodeIdInt = Integer.parseInt(args[0]);
+        String nodeId = args[0];
+        String privateKeyPath = args[1];
+        String publicKeyPath = args[2];
 
         // Parse attack mode
         ByzantineHotStuffConsensus.AttackMode attackMode = ByzantineHotStuffConsensus.AttackMode.BAD_HASH;
-        if (args.length >= 2) {
-            switch (args[1]) {
+        if (args.length >= 4) {
+            switch (args[3]) {
                 case "bad-hash":      attackMode = ByzantineHotStuffConsensus.AttackMode.BAD_HASH; break;
                 case "duplicate-msg": attackMode = ByzantineHotStuffConsensus.AttackMode.DUPLICATE_MSG; break;
                 case "bad-share":     attackMode = ByzantineHotStuffConsensus.AttackMode.BAD_SHARE; break;
                 case "wrong-sender":  attackMode = ByzantineHotStuffConsensus.AttackMode.WRONG_SENDER; break;
                 default:
-                    System.err.println("Unknown attack mode: " + args[1]);
+                    System.err.println("Unknown attack mode: " + args[3]);
                     System.exit(1);
             }
         }
         System.out.println("[BYZANTINE] Node " + nodeId + " starting with attack mode: " + attackMode);
         
         // Initialize crypto and link
-        CryptoLibrary crypto = new CryptoLibrary(
-            "../config/node" + nodeId + ".priv",
-            "../config/node" + nodeId + ".pub",
-            nodeId
-        );
-        Link link = new Link(nodeId, Link.Type.NODE, "../config/membership.json", 
-                            "../config/node" + nodeId + ".priv", 
-                            "../config/node" + nodeId + ".pub");
+        CryptoLibrary crypto = new CryptoLibrary(privateKeyPath, publicKeyPath, nodeId);
+
+        Link link = new Link(nodeId, Link.Type.NODE, "../config/membership.json", privateKeyPath, publicKeyPath, crypto);
         
         // Initialize blockchain
         blockchain = new Blockchain();
         
         // Initialize consensus (n=4, f=1 for 4 nodes)
-        consensus = new ByzantineHotStuffConsensus(nodeId, 4, 1, link, crypto, blockchain, attackMode);
+        consensus = new ByzantineHotStuffConsensus(nodeIdInt, 4, 1, link, crypto, blockchain, attackMode);
         
         // Set up callback for when consensus decides
         consensus.setDecideCallback((decidedNode, view) -> {
             stopPacemaker(); // Stop the timer
             System.out.println("[NODE] Decision reached at view " + view);
-
             // Execute the committed branch
             blockchain.executeCommittedBranch(decidedNode);
             System.out.println(blockchain.getBlockchainState());
 
             String requestKey = decidedNode.getRequestKey();
-            link.send(Link.Type.CLIENT, 1, Message.Type.REPLY, "message " + decidedNode.getRequestKey() + " committed in view " + (view));
+            link.send(Link.Type.CLIENT, "client1", Message.Type.REPLY, "message " + decidedNode.getRequestKey() + " committed in view " + (view));
 
             Message completedMsg = activeRequestsBuffer.remove(requestKey);
             if (completedMsg != null) {
@@ -128,7 +125,7 @@ public class ByzantineNode {
             } else {
                 System.out.println("[NODE] Decided command " + requestKey + " not found in pending buffer");
             }
-
+        
             try {
                 boolean hasPending = pendingClientRequests.values()
                                     .stream()
@@ -165,7 +162,7 @@ public class ByzantineNode {
         }
     }
 
-     private static void handleMessage(Link link, int nodeId, Message msg) throws Exception {
+     private static void handleMessage(Link link, String nodeId, Message msg) throws Exception {
 
         switch (msg.getType()) {
 
@@ -184,7 +181,15 @@ public class ByzantineNode {
 
                 Message clientMsg = activeRequestsBuffer.get(requestKey);
 
+                RequestState state = pendingClientRequests.get(requestKey);
+
                 if (clientMsg == null) {
+
+                    if (state == RequestState.COMPLETED) {
+                        System.out.println("[NODE] Ignoring stale PREPARE for " + requestKey);
+                        return;
+                    }
+                    
                     System.out.println("[NODE] Missing request " + requestKey + ", buffering PREPARE");
                     bufferedPrepare.put(requestKey, msg);
                     return;
@@ -230,17 +235,17 @@ public class ByzantineNode {
         }
     }
 
-    private static void handleNewView(Link link, int nodeId, Message msg) throws Exception {
+    private static void handleNewView(Link link, String nodeId, Message msg) throws Exception {
         consensus.handleNewView(msg);
         // if (consensus.isLeader()) {
         //     proposePendingCommandsIfLeader(link, nodeId);
         // }     
     }
 
-    private static void handleAppendRequest(Link link, int nodeId, Message msg) throws Exception {
+    private static void handleAppendRequest(Link link, String nodeId, Message msg) throws Exception {
         String command = msg.getPayload();
         JsonObject payloadJson = JsonParser.parseString(msg.getPayload()).getAsJsonObject();
-        int clientId = payloadJson.get("clientId").getAsInt();
+        String clientId = payloadJson.get("clientId").getAsString();
         int messageId = payloadJson.get("messageId").getAsInt();        
         String stringToAppend = payloadJson.get("text").getAsString();
 
@@ -275,7 +280,7 @@ public class ByzantineNode {
                 startPacemaker(link, nodeId);
             } else {
                 int leaderId = ((consensus.getViewNumber() - 1) % 4) + 1;
-                link.send(Link.Type.NODE, leaderId, Message.Type.APPEND_STRING, command);
+                link.send(Link.Type.NODE, String.valueOf(leaderId), Message.Type.APPEND_STRING, command);
                 startPacemaker(link, nodeId);
                 System.out.println("[NODE] Request forwarded. Pacemaker started.");
             }
@@ -283,7 +288,7 @@ public class ByzantineNode {
         }
     }
 
-    private static void proposePendingCommandsIfLeader(Link link, int nodeId) throws Exception {
+    private static void proposePendingCommandsIfLeader(Link link, String nodeId) throws Exception {
 
         // Look for the first pending command
         for (Map.Entry<String, Message> entry : activeRequestsBuffer.entrySet()) {
@@ -292,7 +297,7 @@ public class ByzantineNode {
 
             if (state == RequestState.PENDING) {
                 JsonObject payloadJson = JsonParser.parseString(entry.getValue().getPayload()).getAsJsonObject();
-                int clientId = payloadJson.get("clientId").getAsInt();
+                String clientId = payloadJson.get("clientId").getAsString();
                 int messageId = payloadJson.get("messageId").getAsInt();
                 String text = payloadJson.get("text").getAsString();
 

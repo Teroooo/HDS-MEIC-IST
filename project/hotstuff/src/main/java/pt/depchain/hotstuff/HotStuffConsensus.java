@@ -36,10 +36,10 @@ public class HotStuffConsensus {
 
 
     // Vote collection for current view
-    protected final Map<Integer, HotStuffMessage> newViewMessages = new ConcurrentHashMap<>();
-    protected final Map<Integer, HotStuffMessage> prepareVotes = new ConcurrentHashMap<>();
-    private final Map<Integer, HotStuffMessage> preCommitVotes = new ConcurrentHashMap<>();
-    private final Map<Integer, HotStuffMessage> commitVotes = new ConcurrentHashMap<>();
+    protected final Map<String, HotStuffMessage> newViewMessages = new ConcurrentHashMap<>();
+    protected final Map<String, HotStuffMessage> prepareVotes = new ConcurrentHashMap<>();
+    private final Map<String, HotStuffMessage> preCommitVotes = new ConcurrentHashMap<>();
+    private final Map<String, HotStuffMessage> commitVotes = new ConcurrentHashMap<>();
     
     // Command queue (for leader)
     protected final Queue<CommandRequest> pendingCommands = new LinkedBlockingQueue<>();
@@ -54,8 +54,7 @@ public class HotStuffConsensus {
         precommitStarted = false;
         commitStarted = false;
         decideStarted = false;
-        
-        this.startView();             
+        this.startView();
     }
     
     public HotStuffConsensus(int myId, int n, int f, Link link, CryptoLibrary crypto, Blockchain blockchain) {
@@ -82,7 +81,7 @@ public class HotStuffConsensus {
         preCommitVotes.clear();
         commitVotes.clear();
         
-        int leader = getLeader(viewNumber);
+        String leader = Integer.toString(getLeader(viewNumber));
         
         // Send NEW_VIEW message to leader
         HotStuffMessage hsMsg = new HotStuffMessage();
@@ -158,7 +157,8 @@ public class HotStuffConsensus {
         
         String payload = gson.toJson(hsMsg);
         for (int nodeId = 1; nodeId <= n; nodeId++) {
-            link.send(Link.Type.NODE, nodeId, Message.Type.PREPARE, payload);
+            String nodeString = Integer.toString(getLeader(nodeId));
+            link.send(Link.Type.NODE, nodeString, Message.Type.PREPARE, payload);
         }
     }
     
@@ -213,8 +213,8 @@ public class HotStuffConsensus {
                 for(SigShare s : sigSharesArray) {
                     System.out.println("Share from node " + s);
                 }*/
-                Map<Integer, SigShare> sigSharesMap = new HashMap<>();
-                for (Map.Entry<Integer, HotStuffMessage> entry : prepareVotes.entrySet()) {
+                Map<String, SigShare> sigSharesMap = new HashMap<>();
+                for (Map.Entry<String, HotStuffMessage> entry : prepareVotes.entrySet()) {
                     sigSharesMap.put(entry.getKey(), entry.getValue().getVoteSignature());
                 }
 
@@ -252,7 +252,7 @@ public class HotStuffConsensus {
         
         // Create prepareQC
         prepareQC = new QuorumCertificate(QuorumCertificate.QCType.PREPARE, viewNumber, currentProposal.getHash());
-        for (Map.Entry<Integer, HotStuffMessage> entry : prepareVotes.entrySet()) {
+        for (Map.Entry<String, HotStuffMessage> entry : prepareVotes.entrySet()) {
             prepareQC.addVote(entry.getKey(), entry.getValue().getVoteSignature());
         }
         
@@ -264,7 +264,8 @@ public class HotStuffConsensus {
         
         String payload = gson.toJson(hsMsg);
         for (int nodeId = 1; nodeId <= n; nodeId++) {
-            link.send(Link.Type.NODE, nodeId, Message.Type.PRE_COMMIT, payload);
+            String nodeString = Integer.toString(getLeader(nodeId));
+            link.send(Link.Type.NODE, nodeString, Message.Type.PRE_COMMIT, payload);
         }
         // System.out.println("[TEST] Sleeping for 2 seconds before Commit. Kill this process now to simulate crash.");
         // Thread.sleep(2000);
@@ -316,8 +317,8 @@ public class HotStuffConsensus {
                 for(SigShare s : sigSharesArray) {
                     System.out.println("Share from node " + s);
                 }*/
-                Map<Integer, SigShare> sigSharesMap = new HashMap<>();
-                for (Map.Entry<Integer, HotStuffMessage> entry : preCommitVotes.entrySet()) {
+                Map<String, SigShare> sigSharesMap = new HashMap<>();
+                for (Map.Entry<String, HotStuffMessage> entry : preCommitVotes.entrySet()) {
                     sigSharesMap.put(entry.getKey(), entry.getValue().getVoteSignature());
                 }
 
@@ -355,7 +356,7 @@ public class HotStuffConsensus {
         
         // Create precommitQC
         QuorumCertificate precommitQC = new QuorumCertificate(QuorumCertificate.QCType.PRE_COMMIT, viewNumber, currentProposal.getHash());
-        for (Map.Entry<Integer, HotStuffMessage> entry : preCommitVotes.entrySet()) {
+        for (Map.Entry<String, HotStuffMessage> entry : preCommitVotes.entrySet()) {
             precommitQC.addVote(entry.getKey(), entry.getValue().getVoteSignature());
         }
         
@@ -367,7 +368,8 @@ public class HotStuffConsensus {
         
         String payload = gson.toJson(hsMsg);
         for (int nodeId = 1; nodeId <= n; nodeId++) {
-            link.send(Link.Type.NODE, nodeId, Message.Type.COMMIT, payload);
+            String nodeString = Integer.toString(getLeader(nodeId));
+            link.send(Link.Type.NODE, nodeString, Message.Type.COMMIT, payload);
         }
         // System.out.println("[TEST] Sleeping for 2 seconds before DECIDE. Kill this process now to simulate crash.");
         // Thread.sleep(2000);
@@ -421,8 +423,8 @@ public class HotStuffConsensus {
                 for(SigShare s : sigSharesArray) {
                     System.out.println("Share from node " + s);
                 }*/
-                Map<Integer, SigShare> sigSharesMap = new HashMap<>();
-                for (Map.Entry<Integer, HotStuffMessage> entry : commitVotes.entrySet()) {
+                Map<String, SigShare> sigSharesMap = new HashMap<>();
+                for (Map.Entry<String, HotStuffMessage> entry : commitVotes.entrySet()) {
                     sigSharesMap.put(entry.getKey(), entry.getValue().getVoteSignature());
                 }
 
@@ -460,7 +462,7 @@ public class HotStuffConsensus {
         
         // Create commitQC
         QuorumCertificate commitQC = new QuorumCertificate(QuorumCertificate.QCType.COMMIT, viewNumber, currentProposal.getHash());
-        for (Map.Entry<Integer, HotStuffMessage> entry : commitVotes.entrySet()) {
+        for (Map.Entry<String, HotStuffMessage> entry : commitVotes.entrySet()) {
             commitQC.addVote(entry.getKey(), entry.getValue().getVoteSignature());
         }
         
@@ -472,7 +474,8 @@ public class HotStuffConsensus {
         
         String payload = gson.toJson(hsMsg);
         for (int nodeId = 1; nodeId <= n; nodeId++) {
-            link.send(Link.Type.NODE, nodeId, Message.Type.DECIDE, payload);
+            String nodeString = Integer.toString(getLeader(nodeId));
+            link.send(Link.Type.NODE, nodeString, Message.Type.DECIDE, payload);
         }
         
         // Leader will receive its own DECIDE message and process like others
@@ -500,15 +503,14 @@ public class HotStuffConsensus {
                 newViewMessages.clear();   // only leader resets collection
             }
 
-            viewNumber++;
             // Invoke callback
             if (decideCallback != null) {
-                decideCallback.onDecide(decidedNode,  viewNumber - 1);
+                decideCallback.onDecide(decidedNode,  viewNumber);
             }
 
             // Move to next view
             Thread.sleep(100); // Small delay before starting next view
-            startView();
+            this.advanceView();
         }
     }
     
@@ -585,7 +587,7 @@ public class HotStuffConsensus {
         }
     }
 
-    public boolean verifyThresholdVote(Map<Integer, SigShare> votesMap, byte[]... candidateDatas) {
+    public boolean verifyThresholdVote(Map<String, SigShare> votesMap, byte[]... candidateDatas) {
         List<SigShare> votes = new ArrayList<>(votesMap.values());
 
         for (byte[] data : candidateDatas) {

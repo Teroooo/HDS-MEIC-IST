@@ -4,9 +4,9 @@ import java.io.Serializable;
 
 public class Message implements Serializable {
 
-    private int senderId;
+    private String senderId;
 
-    private int receiverId;
+    private String receiverId;
 
     private int messageId;
 
@@ -23,27 +23,29 @@ public class Message implements Serializable {
         PRE_COMMIT, PRE_COMMIT_VOTE,
         COMMIT, COMMIT_VOTE,
         DECIDE,
-        REPLY
+        REPLY,
+        KEY_EXCHANGE,
+        KEY_EXCHANGE_REPLY
     }
 
-    public Message(int senderId, Type type) {
+    public Message(String senderId, Type type) {
         this.senderId = senderId;
         this.type = type;
     }
 
-    public int getSenderId() {
+    public String getSenderId() {
         return senderId;
     }
 
-    public void setSenderId(int senderId) {
+    public void setSenderId(String senderId) {
         this.senderId = senderId;
     }
 
-    public int getReceiver() {
+    public String getReceiver() {
         return receiverId;
     }
 
-    public void setReceiver(int receiverId) {
+    public void setReceiver(String receiverId) {
         this.receiverId = receiverId;
     }
 

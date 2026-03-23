@@ -34,11 +34,11 @@ public class CryptoLibrary {
 
     private final HashMap<String, PublicKey> publicKeys = new HashMap<>();
 
-    public int k = 3;
-    public int l = 4;
+    public int k;
+    public int l;
 
     private final GroupKey groupKey = null;
-    private final KeyShare[] keyShares = new KeyShare[l];
+    private KeyShare[] keyShares;
     private KeyShare myKey;
 
     private BigInteger n = null;
@@ -50,6 +50,7 @@ public class CryptoLibrary {
         this.privateKey = readPrivateKey(privateKeyPath);
         this.publicKey = readPublicKey(publicKeyPath);
         loadGroupKey();
+        this.keyShares = new KeyShare[l];
         loadKeyShares();
         loadMyKeyShare(myId);
     }
@@ -57,6 +58,7 @@ public class CryptoLibrary {
     public CryptoLibrary(String privateKeyPath, String publicKeyPath) throws Exception {
         this.privateKey = readPrivateKey(privateKeyPath);
         this.publicKey = readPublicKey(publicKeyPath); 
+        loadGroupKey();
     }
 
     private void loadGroupKey() throws IOException {
@@ -69,6 +71,8 @@ public class CryptoLibrary {
 
         this.n = new BigInteger(groupMap.get("n"));
         this.e = new BigInteger(groupMap.get("e"));
+        this.k = Integer.parseInt(groupMap.get("k"));
+        this.l = Integer.parseInt(groupMap.get("l"));
     }
 
     private void loadKeyShares() throws Exception {
@@ -189,7 +193,7 @@ public class CryptoLibrary {
     }
     
     public boolean verifyShare(byte[] data, SigShare[] sigShares) throws Exception {
-        return SigShare.verify(data, sigShares, 3, 4, n, e);
+        return SigShare.verify(data, sigShares, k, l, n, e);
     }
 
     public SecretKey generateAESKey() throws Exception {

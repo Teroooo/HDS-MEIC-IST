@@ -13,9 +13,21 @@ import com.google.gson.GsonBuilder;
 
 public class ThresholdKeyGenerator {
     public static void main(String[] args) throws Exception {
-        int k = 3;
-        int l = 4;
+        if (args.length < 2) {
+            System.err.println("Usage: ThresholdKeyGenerator <k> <l>");
+            System.err.println("  k = minimum signatures required (threshold)");
+            System.err.println("  l = total number of nodes");
+            System.exit(1);
+        }
+
+        int k = Integer.parseInt(args[0]);
+        int l = Integer.parseInt(args[1]);
         int keysize = 512;
+
+        if (k > l) {
+            System.err.println("k must be <= l");
+            System.exit(1);
+        }
 
         Dealer dealer = new Dealer(keysize);
         dealer.generateKeys(k, l);

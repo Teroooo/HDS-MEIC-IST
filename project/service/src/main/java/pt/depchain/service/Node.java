@@ -1,21 +1,13 @@
 package pt.depchain.service;
 
-import pt.depchain.communication.*;
-import pt.depchain.crypto.CryptoLibrary;
-import pt.depchain.hotstuff.*;
-import java.net.*;
 import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -23,9 +15,16 @@ import java.util.concurrent.TimeUnit;
 
 import javax.crypto.SecretKey;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.google.gson.Gson;
+
+import pt.depchain.communication.Link;
+import pt.depchain.communication.Message;
+import pt.depchain.crypto.CryptoLibrary;
+import pt.depchain.hotstuff.Blockchain;
+import pt.depchain.hotstuff.HotStuffConsensus;
+import pt.depchain.hotstuff.HotStuffMessage;
 
 public class Node {
     
@@ -107,7 +106,7 @@ public class Node {
         initiateKeyExchange(link, nodeId);
 
         // ✅ 4. Wait until all symmetric keys are established
-        while (crypto.getSymmetricKeys().size() < 4) {
+        while (crypto.getSymmetricKeys().size() < crypto.l) {
             System.out.println("[NODE] Waiting for key exchange to complete. Current keys: " 
                 + crypto.getSymmetricKeys().keySet());
             Thread.sleep(2000);
@@ -119,7 +118,7 @@ public class Node {
         blockchain = new Blockchain();
 
         // Initialize consensus
-        consensus = new HotStuffConsensus(nodeIdInt, 4, 1, link, crypto, blockchain);
+        consensus = new HotStuffConsensus(nodeIdInt, crypto.l, (int) Math.floor((crypto.l-1)/3), link, crypto, blockchain);
 
         // Set up callback
         consensus.setDecideCallback((decidedNode, view) -> {
@@ -362,8 +361,11 @@ public class Node {
         System.out.println(crypto);
         String publicKey = Base64.getEncoder().encodeToString(crypto.getMyPublicKey().getEncoded());
 
-        String[] replicaIds = new String[]{"1", "2", "3", "4"};
-
+        String[] replicaIds = new String[crypto.l];
+        for (int i = 1; i <= crypto.l; i++) {
+            replicaIds[i - 1] = String.valueOf(i);
+        }
+        System.out.println("\n\n\nInitiating key exchange with replicas: " + Arrays.toString(replicaIds) + "\n\n\n");
         try {
             for (String replicaId : replicaIds) {
                 if (Integer.parseInt(nodeId) <= Integer.parseInt(replicaId)) {

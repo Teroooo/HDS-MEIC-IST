@@ -20,6 +20,8 @@ public class ClientMain {
             System.exit(1);
         }  
 
+        
+
         String clientId = args[0];
         String privateKeyPath = args[1];
         String publicKeyPath = args[2];
@@ -92,7 +94,11 @@ public class ClientMain {
                     payloadJson.addProperty("messageId", messageId);
                     
                     String payload = payloadJson.toString();
-                    String[] replicas = {"1","2","3","4"};
+                    String[] replicas = new String[crypto.l];
+                    for (int i = 1; i <= crypto.l; i++) {
+                        replicas[i - 1] = String.valueOf(i);
+                    }
+                    
                     
                     
                     link.broadcastWithId(replicas, Message.Type.APPEND_STRING, payload, messageId);

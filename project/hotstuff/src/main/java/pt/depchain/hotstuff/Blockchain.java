@@ -49,9 +49,16 @@ public class Blockchain {
                 TreeNode parent = nodesByHash.get(parentHashStr);
                 if (parent != null) {
                     parent.addChild(node);
+                } else {
+                    // System.err.println("[BLOCKCHAIN-ERROR] Parent node not found for node: " + node);
                 }
+            } else {
+                // System.out.println("\n\n\n\n  [BLOCKCHAIN] Added root node: " + node + "\n\n\n\n");
             }
+        } else {
+            // System.out.println("\n\n\n\n  [BLOCKCHAIN] Node already exists: " + node + "\n\n\n\n");
         }
+        // System.out.println("\n\n\n\n  [BLOCKCHAIN] Current blockchain state after adding node: " + committedCommands + "\n\n"+ nodesByHash +" \n\n");
     }
     
     /**
@@ -117,5 +124,13 @@ public class Blockchain {
             sb.append(String.format("%02x", b));
         }
         return sb.toString();
+    }
+
+    public TreeNode[] getChildrenNodesFromHash(byte[] hash) {
+        TreeNode node = nodesByHash.get(bytesToHex(hash));
+        if (node != null) {
+            return node.getChildren().toArray(new TreeNode[0]);
+        }
+        return new TreeNode[0];
     }
 }

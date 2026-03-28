@@ -20,6 +20,7 @@ public class HotStuffConsensus {
     protected final CryptoLibrary crypto;
     protected final Blockchain blockchain;
     protected final Gson gson = new Gson();
+    private boolean isSincPhase = false;
     
 
     protected int viewNumber;
@@ -37,9 +38,11 @@ public class HotStuffConsensus {
 
     // Vote collection for current view
     protected final Map<String, HotStuffMessage> newViewMessages = new ConcurrentHashMap<>();
+    protected final Map<String, HotStuffMessage> futureNewViewMessages = new ConcurrentHashMap<>();
     protected final Map<String, HotStuffMessage> prepareVotes = new ConcurrentHashMap<>();
     private final Map<String, HotStuffMessage> preCommitVotes = new ConcurrentHashMap<>();
     private final Map<String, HotStuffMessage> commitVotes = new ConcurrentHashMap<>();
+    private final Map<String, HotStuffMessage> sincViewMessages = new ConcurrentHashMap<>();
     
     // Command queue (for leader)
     protected final Queue<CommandRequest> pendingCommands = new LinkedBlockingQueue<>();
@@ -55,6 +58,18 @@ public class HotStuffConsensus {
         commitStarted = false;
         decideStarted = false;
         this.startView();
+    }
+
+    public void advanceViewAfterSync(int viewNumber) throws Exception {
+        this.viewNumber = viewNumber;
+        
+        // Limpar apenas futureNewViewMessages
+        futureNewViewMessages.clear();
+        sincViewMessages.clear();
+        isSincPhase = false;
+        
+        //System.out.println("CLEANED AFTER SYNC, advancing to view " + viewNumber++);
+        advanceView();
     }
     
     public HotStuffConsensus(int myId, int n, int f, Link link, CryptoLibrary crypto, Blockchain blockchain) {
@@ -86,6 +101,7 @@ public class HotStuffConsensus {
         // Send NEW_VIEW message to leader
         HotStuffMessage hsMsg = new HotStuffMessage();
         hsMsg.setQc(prepareQC);
+        hsMsg.setViewNumber(viewNumber);
         
         String payload = gson.toJson(hsMsg);
         link.send(Link.Type.NODE, leader, Message.Type.NEW_VIEW, payload);
@@ -96,13 +112,48 @@ public class HotStuffConsensus {
 
     public void handleNewView(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
-        newViewMessages.put(msg.getSenderId(), hsMsg);
+        // view number of the message
+        int msgViewNumber = hsMsg.getViewNumber();
+        //System.out.println("\n\n\nmsgViewNumber: " + msgViewNumber + ", current view: " + viewNumber + "\n\n\n");
+        if (msgViewNumber > viewNumber) {
+            futureNewViewMessages.put(msg.getSenderId(), hsMsg);
+        } 
+        else if (msgViewNumber == viewNumber) {
+            newViewMessages.put(msg.getSenderId(), hsMsg);
+        }
+        
         
         //System.out.println("[CONSENSUS] Leader " + myId + " received NEW_VIEW from node " + msg.getSenderId() 
         //                 + " (collected " + newViewMessages.size() + "/" + (n-f) + ")");
         
         // Start PREPARE phase when we reach exactly (n-f) NEW_VIEW messages
+        
         System.out.println("Current NEW_VIEW messages: " + newViewMessages.size());
+        
+        long count = futureNewViewMessages.values().stream()
+        .filter(m -> m.getViewNumber() == msgViewNumber)
+        .count();
+        
+        if (count >= f + 1 && !isSincPhase) {
+            isSincPhase = true; // Ensure this only happens once
+            System.out.println("\n\n\n[CONSENSUS] STARTING SINC PHASE for view\n\n\n");
+            // Send sinc message to all nodes
+            for (int nodeId = 1; nodeId <= n; nodeId++) {
+                if (nodeId == myId) continue; 
+                String nodeString = Integer.toString(getLeader(nodeId));
+                
+
+                HotStuffMessage msgpayload = new HotStuffMessage();
+                msgpayload.setNodeHash(blockchain.getLastCommittedNode().getHash());
+                msgpayload.setViewNumber(viewNumber);
+                
+                String payload = gson.toJson(msgpayload);
+
+                System.out.println("[CONSENSUS] Sending SINC_VIEW_REQUEST with payload: " + payload);
+
+                link.send(Link.Type.NODE, nodeString, Message.Type.SINC_VIEW_REQUEST, payload);
+            }
+        }
         if (isLeader() && newViewMessages.size() == (n - f)) {
             runPreparePhase();
         }
@@ -621,6 +672,86 @@ public class HotStuffConsensus {
             current.add(list.get(i));
             combineHelper(list, i + 1, current, result);
             current.remove(current.size() - 1);
+        }
+    }
+
+    public void handleSincView(Link link, Message msg) throws Exception {
+        HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
+
+        System.out.println("\n\nMESSAGE PAYLOAD: " + msg.getPayload() + "\n\n");
+
+
+        TreeNode[] missingNodes = blockchain.getChildrenNodesFromHash(hsMsg.getNodeHash());
+
+        HotStuffMessage response = new HotStuffMessage();
+        response.setViewNumber(viewNumber);
+        response.setSyncNodes(missingNodes);
+
+        System.out.println("\n\nmissingNodes: " + Arrays.toString(missingNodes) + "\nresponse.getSyncNodes(): " + Arrays.toString(response.getSyncNodes())+"\n\n");
+
+        link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.SINC_VIEW_REPLY, gson.toJson(response));
+
+        System.out.println("\n\n\n\n blockchain after sync: " + blockchain.getBlockchainState() + "\n\n\n\n");
+
+
+        System.out.println("[SYNC] Node " + myId + " sent " + missingNodes.length + " missing nodes to " + msg.getSenderId());
+
+        advanceView();
+    }
+
+    public void handleSincViewReply(Link link, Message msg) throws Exception {
+        if (isSincPhase) {
+
+            HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
+        
+            sincViewMessages.put(msg.getSenderId(), hsMsg);
+            
+            
+            
+            System.out.println("[SYNC] Node " + myId + " received SINC_VIEW_REPLY from " + msg.getSenderId() + " (collected " + sincViewMessages.size() + "/" + (f+1) + ")\n sincViewMessages: " + sincViewMessages.keySet());
+            
+            if (sincViewMessages.size() >= f + 1) {
+                
+                // Extrair viewNumber
+                int newViewNumber = hsMsg.getViewNumber();
+                
+                // Extrair nodes
+                TreeNode[] receivedNodes = hsMsg.getSyncNodes();
+
+                System.out.println("\n\n\n\n receivedNodes: " + Arrays.toString(receivedNodes) + "\n\n\n\n");
+    
+                System.out.println("[SYNC] Node " + myId + " received " + receivedNodes.length + " nodes, integrating...");
+                // TODO fix integrate all children nodes instead of one child node at a time
+                TreeNode receivedNode = receivedNodes[0];
+                while (receivedNode != null) {
+                    // Validar hash encadeado antes de adicionar
+                    TreeNode parent = blockchain.getNode(receivedNode.getParentHash());
+                    System.out.println("Integrating node: " + receivedNode + ", parent: " + parent);
+                    if (parent == null) {
+                        System.out.println("[SYNC] Byzantine node detected: parent not found, skipping node");
+                        // Avança para o próximo filho, se existir
+                        receivedNode = receivedNode.getChildren().isEmpty() ? null : receivedNode.getChildren().get(0);
+                        continue;
+                    }
+                    blockchain.addNode(receivedNode);
+                    blockchain.executeCommittedBranch(receivedNode);
+
+                    System.out.println("[SYNC] Integrated node childs: " + receivedNode.getChildren());
+                    System.out.println("[SYNC] Current blockchain state: " + blockchain.getBlockchainState());
+                    // Avança para o próximo filho, se existir
+                    receivedNode = receivedNode.getChildren().isEmpty() ? null : receivedNode.getChildren().get(0);
+                }
+
+                System.out.println("\n\n\n\n blockchain after sync: " + blockchain.getBlockchainState() + "\n\n\n\n");
+                
+                
+                System.out.println("[SYNC] Sync complete, advancing to view " + newViewNumber);
+                
+                futureNewViewMessages.clear();
+                advanceViewAfterSync(newViewNumber);
+            }
+        } else {
+            System.out.println("[SYNC] Received SINC_VIEW_REPLY but not in sync phase, ignoring.");
         }
     }
 }

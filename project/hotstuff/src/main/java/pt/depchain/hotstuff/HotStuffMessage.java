@@ -14,6 +14,7 @@ public class HotStuffMessage implements Serializable {
     private byte[] nodeHash;
     private String clientCommand;
     private int viewNumber;
+    private TreeNode[] syncNodes; // For synchronization phase
     
     public HotStuffMessage() {
     }
@@ -64,5 +65,13 @@ public class HotStuffMessage implements Serializable {
 
     public void setViewNumber(int viewNumber) {
         this.viewNumber = viewNumber;
+    }
+
+    public TreeNode[] getSyncNodes() {
+        return syncNodes;
+    }
+
+    public void setSyncNodes(TreeNode[] syncNodes) {
+        this.syncNodes = syncNodes;
     }
 }

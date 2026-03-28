@@ -25,7 +25,9 @@ public class Message implements Serializable {
         DECIDE,
         REPLY,
         KEY_EXCHANGE,
-        KEY_EXCHANGE_REPLY
+        KEY_EXCHANGE_REPLY,
+        SINC_VIEW_REQUEST,
+        SINC_VIEW_REPLY
     }
 
     public Message(String senderId, Type type) {

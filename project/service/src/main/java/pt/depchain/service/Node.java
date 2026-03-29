@@ -93,6 +93,12 @@ public class Node {
         crypto = new CryptoLibrary(privateKeyPath, publicKeyPath, nodeId);
 
         Link link = new Link(nodeId, Link.Type.NODE, "../config/membership.json", privateKeyPath, publicKeyPath, crypto);
+        
+        // Initialize blockchain
+        blockchain = new Blockchain();
+
+        // Initialize consensus
+        consensus = new HotStuffConsensus(nodeIdInt, crypto.l, (int) Math.floor((crypto.l-1)/3), link, crypto, blockchain);
 
         // ✅ 1. Start receiver thread FIRST
         startReceiverThread(link, nodeId, crypto);
@@ -113,12 +119,6 @@ public class Node {
         }
 
         System.out.println("[NODE] Key exchange completed.");
-
-        // Initialize blockchain
-        blockchain = new Blockchain();
-
-        // Initialize consensus
-        consensus = new HotStuffConsensus(nodeIdInt, crypto.l, (int) Math.floor((crypto.l-1)/3), link, crypto, blockchain);
 
         // Set up callback
         consensus.setDecideCallback((decidedNode, view) -> {
@@ -176,7 +176,13 @@ public class Node {
      private static void handleMessage(Link link, String nodeId, Message msg, CryptoLibrary crypto) throws Exception {
 
         switch (msg.getType()) {
-
+            case TRANSACTION:
+                //handleTransactionRequest(link, nodeId, msg);
+                break;
+            case TRANSFER_GAS:
+                //handleTransferGasRequest(link, nodeId, msg);
+                break;
+                
             case APPEND_STRING:
                 handleAppendRequest(link, nodeId, msg);
                 break;
@@ -381,6 +387,13 @@ public class Node {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private static float calculateTransactionFee(Float gas_price, Float gas_limit, Float gas_used) {
+        if (gas_price == null || gas_limit == null || gas_price <= 0 || gas_limit <= 0) {
+            throw new IllegalArgumentException("Gas price and gas limit must be provided");
+        }
+        return Math.min(gas_price * gas_limit, gas_price * gas_used);
     }
 
 }

@@ -1,0 +1,34 @@
+{
+"block_hash": "aa9e12ee9f0188870bd9234356939b50cbdd4781b5dab99744c15fb603a5eb0c", 
+"previous_block_hash": null,
+"transactions": [ 
+    { 
+    "from": "address_0xContractAccount", 
+    "to": "address_0xB", 
+    "Input": "0x606045"
+    },
+    { 
+    "from": "address_0xA", 
+    "to": null, 
+    "Input": "0x606045"
+    }
+    ], 
+"state": { 
+    "address_0xA": 
+        { 
+        "balance": "10000",
+        "nonce": 0 
+        },
+    "address_0xB": 
+        { 
+        "balance": "1000",
+        "nonce": 0 
+        },
+    "address_0xContractAccount": 
+        { 
+        "balance": "100000",
+        "nonce": 0 
+        }
+}
+
+}

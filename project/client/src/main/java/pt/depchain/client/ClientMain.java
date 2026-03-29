@@ -13,14 +13,13 @@ public class ClientMain {
     private static volatile int receivedMessages = 0;
     private static final Map<String, Integer> responseCounts = new HashMap<>();
     private static volatile boolean completed = false;
-
+    
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
             System.err.println("Usage: java ClientMain <clientId> <privateKey> <publicKey>");
             System.exit(1);
         }  
 
-        
 
         String clientId = args[0];
         String privateKeyPath = args[1];
@@ -69,6 +68,7 @@ public class ClientMain {
 
         while (true) {
             System.out.println("\nSelect operation:");
+            System.out.println("2 - Transfer Funds");
             System.out.println("1 - Append String");
             System.out.println("0 - Exit");
             System.out.print("> ");
@@ -76,6 +76,48 @@ public class ClientMain {
             String choice = scanner.nextLine();
 
             switch (choice) {
+                case "2":
+                    System.out.print("Enter account to transfer to: ");
+                    String destAccount = scanner.nextLine();
+
+                    System.out.print("Enter amount to transfer: ");
+                    String amountStr = scanner.nextLine();
+
+                    System.out.print("Enter gas_limit: ");
+                    String gasLimitStr = scanner.nextLine();
+
+                    System.out.print("Enter gas_price: ");
+                    String gasPriceStr = scanner.nextLine();
+
+                    messageId++;
+                    synchronized (responseCounts) {
+                        responseCounts.clear();
+                    }
+                    completed = false;
+
+                    JsonObject payloadJsonTransfer = new JsonObject();
+                    payloadJsonTransfer.addProperty("clientId", clientId);
+                    payloadJsonTransfer.addProperty("messageId", messageId);
+                    payloadJsonTransfer.addProperty("destAccount", destAccount);
+                    payloadJsonTransfer.addProperty("amount", amountStr);
+                    payloadJsonTransfer.addProperty("gasLimit", gasLimitStr);
+                    payloadJsonTransfer.addProperty("gasPrice", gasPriceStr);
+
+                    String payloadTransfer = payloadJsonTransfer.toString();
+                    String[] replicas = new String[crypto.l];
+                    for (int i = 1; i <= crypto.l; i++) {
+                        replicas[i - 1] = String.valueOf(i);
+                    }
+                    
+                    link.broadcastWithId(replicas, Message.Type.TRANSACTION, payloadTransfer, messageId);
+                    
+                    System.out.println("\nTransfer request of " + amountStr + " to " + destAccount + " sent.");                    
+                    
+                    // Wait for (n-f) = 3 responses
+                    while (!completed) {
+                        Thread.sleep(100);
+                    }
+                    break;
 
                 case "1":
                            
@@ -94,14 +136,14 @@ public class ClientMain {
                     payloadJson.addProperty("messageId", messageId);
                     
                     String payload = payloadJson.toString();
-                    String[] replicas = new String[crypto.l];
+                    String[] replicasAppend = new String[crypto.l];
                     for (int i = 1; i <= crypto.l; i++) {
-                        replicas[i - 1] = String.valueOf(i);
+                        replicasAppend[i - 1] = String.valueOf(i);
                     }
                     
                     
                     
-                    link.broadcastWithId(replicas, Message.Type.APPEND_STRING, payload, messageId);
+                    link.broadcastWithId(replicasAppend, Message.Type.APPEND_STRING, payload, messageId);
                     
                     System.out.println("\nAppend request sent. Waiting for responses...");
                     

@@ -1,14 +1,36 @@
-[
-  {
-    "clients": [
-      {"id":"client1", "host":"localhost", "port":4001, "pub":"client1.pub"},
-      {"id":"client2", "host":"localhost", "port":4002, "pub":"client2.pub"}
-    ],
-    "nodes": [
-      {"id":"1", "host":"localhost", "port":9001, "pub":"node1.pub"},
-      {"id":"2", "host":"localhost", "port":9002, "pub":"node2.pub"},
-      {"id":"3", "host":"localhost", "port":9003, "pub":"node3.pub"},
-      {"id":"4", "host":"localhost", "port":9004, "pub":"node4.pub"}
-    ]
-  }
-]
+[{
+    "clients":  [
+                    {
+                        "port":  4001,
+                        "host":  "localhost",
+                        "pub":  "client1.pub",
+                        "id":  "client1"
+                    }
+                ],
+    "nodes":  [
+                  {
+                      "port":  9001,
+                      "host":  "localhost",
+                      "pub":  "node1.pub",
+                      "id":  "1"
+                  },
+                  {
+                      "port":  9002,
+                      "host":  "localhost",
+                      "pub":  "node2.pub",
+                      "id":  "2"
+                  },
+                  {
+                      "port":  9003,
+                      "host":  "localhost",
+                      "pub":  "node3.pub",
+                      "id":  "3"
+                  },
+                  {
+                      "port":  9004,
+                      "host":  "localhost",
+                      "pub":  "node4.pub",
+                      "id":  "4"
+                  }
+              ]
+}]

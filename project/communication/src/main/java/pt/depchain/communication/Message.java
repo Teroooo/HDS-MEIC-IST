@@ -1,5 +1,4 @@
 package pt.depchain.communication;
-
 import java.io.Serializable;
 
 public class Message implements Serializable {
@@ -27,7 +26,9 @@ public class Message implements Serializable {
         KEY_EXCHANGE,
         KEY_EXCHANGE_REPLY,
         SINC_VIEW_REQUEST,
-        SINC_VIEW_REPLY
+        SINC_VIEW_REPLY,
+        TRANSACTION,
+        TRANSFER_GAS
     }
 
     public Message(String senderId, Type type) {

@@ -1,13 +1,20 @@
 ## Requirements:
 - Java above version 21, 
 - Apache Maven above version 3.8.
+- Openssl 3.6.1:27
 
 ## Compile & Run
+
 
 Compile project with: 
 
 ```
 mvn clean install -DskipTests
+```
+
+Run Automated Script:
+```
+.\launch.ps1 -c <Nº of Clients> -r <Nº of Nodes>
 ```
 
 Run Client: 

@@ -4,6 +4,7 @@ import java.io.Serializable;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 
 public class TreeNode implements Serializable {
@@ -24,6 +25,7 @@ public class TreeNode implements Serializable {
         this.children = new ArrayList<>();
         this.hash = computeHash();
         this.requestKey = "GENESIS";
+        System.out.println("  [HASH] Computing hash for node: " + HexFormat.of().formatHex(hash));
     }
     
     // Regular node constructor
@@ -34,6 +36,7 @@ public class TreeNode implements Serializable {
         this.viewNumber = viewNumber;
         this.children = new ArrayList<>();
         this.hash = computeHash();
+        System.out.println("  [HASH] Computing hash for node: " + this.hash);
     }
     
     public String getCommand() {

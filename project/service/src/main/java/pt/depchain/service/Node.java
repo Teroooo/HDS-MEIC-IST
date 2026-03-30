@@ -7,13 +7,17 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import javax.crypto.SecretKey;
 
@@ -47,6 +51,9 @@ public class Node {
     private static final Gson gson = new Gson();
 
     private static CryptoLibrary crypto;
+
+
+    private static List<Transaction> pendingTransactions = new ArrayList<>();
 
     enum RequestState {
         PENDING,
@@ -510,7 +517,8 @@ public class Node {
             }
             System.out.println("[NODE] New request added to pending buffer with key: " + key);
             if (consensus.isLeader()) {
-                consensus.addTransaction(transaction, key);
+                //consensus.addCommand(stringToAppend, key);
+                pendingTransactions.add(transaction);
                 startPacemaker(link, nodeId);
             } else {
                 int leaderId = ((consensus.getViewNumber() - 1) % 4) + 1;
@@ -520,6 +528,57 @@ public class Node {
             }
             // store command in consensus queue for ALL replicas
         }
+    }
+
+    //Phase 2: create new block based on transaction Fee limit?
+    private Block createBlock(Float transactionFeeLimit){
+        sortMempool();
+        //create a new block with transactions from the mempool that fit within the fee limit
+        List<Transaction> blockTransactions = new ArrayList<>();
+        Float totalFloat = 0.0f;
+
+        // Track senders who have a transaction that failed to fit
+        Set<String> skippedSenders = new HashSet<>();
+
+        Iterator<Transaction> it = pendingTransactions.iterator();
+        while (it.hasNext()) {
+            Transaction tx = it.next();
+
+            if (skippedSenders.contains(tx.getFrom())) continue;
+
+            if (totalFloat + tx.getTransactionFee() <= transactionFeeLimit) {
+                blockTransactions.add(tx);
+                totalFloat += tx.getTransactionFee();
+                it.remove(); // Removes safely from pendingTransactions
+            } else {
+                skippedSenders.add(tx.getFrom());
+            }
+        }
+        return new Block(blockchain.getLastCommittedNode().getHash().toString(), blockTransactions);
+    }
+
+    //Phase 2: create new block without limit, just sort
+    private Block createBlock(){
+        sortMempool();
+        List<Transaction> transac = new ArrayList<>(pendingTransactions);
+
+        // 3. Clear the mempool so new incoming transactions can fill it up
+        pendingTransactions.clear();
+        return new Block(blockchain.getLastCommittedNode().getHash().toString(), transac);
+    }
+
+    //Phase 2: sort transactions before creating a block
+    public void sortMempool() {
+        pendingTransactions.sort((a, b) -> {
+        // 1. If same sender, strictly follow Nonce order
+        if (a.getFrom().equals(b.getFrom())) {
+            return Integer.compare(a.getNounce(), b.getNounce());
+        }
+        
+        // 2. If different senders, prioritize the higher fee
+        // We use b.fee - a.fee for descending order (highest first)
+        return Double.compare(b.getGasPrice(), a.getGasPrice());
+        });
     }
 
 }

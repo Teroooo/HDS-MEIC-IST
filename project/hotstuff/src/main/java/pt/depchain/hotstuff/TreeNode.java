@@ -60,6 +60,18 @@ public class TreeNode implements Serializable {
         this.hash = computeHashFromBlock();
         System.out.println("  [HASH] Computing hash for node: " + this.hash);
     }
+
+    // PHASE 2: Block node constructor
+    public TreeNode(Block bloco, byte[] parentHash, int viewNumber) {
+        this.command = "bloco";
+        this.block = bloco;
+        this.requestKey = null;
+        this.parentHash = parentHash;
+        this.viewNumber = viewNumber;
+        this.children = new ArrayList<>();
+        this.hash = computeHashFromBlock();
+        System.out.println("  [HASH] Computing hash for node: " + this.hash);
+    }
     
     public String getCommand() {
         return command;
@@ -96,7 +108,6 @@ public class TreeNode implements Serializable {
     public boolean isRoot() {
         return parentHash == null;
     }
-    
 
     private byte[] computeHash() {
         try {
@@ -127,7 +138,6 @@ public class TreeNode implements Serializable {
         }
     }
     
-
     public boolean extendsFrom(TreeNode other) {
         if (other == null) return true; // null means root/genesis
         if (Arrays.equals(this.hash, other.hash)) return true;
@@ -135,7 +145,6 @@ public class TreeNode implements Serializable {
         return Arrays.equals(this.parentHash, other.hash);
     }
     
-
     public List<byte[]> getPathToRoot() {
         List<byte[]> path = new ArrayList<>();
         path.add(this.hash);

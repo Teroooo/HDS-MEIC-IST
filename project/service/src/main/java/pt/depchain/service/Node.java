@@ -42,7 +42,7 @@ public class Node {
     
     private static final ScheduledExecutorService pacemaker = Executors.newSingleThreadScheduledExecutor();
     private static ScheduledFuture<?> timeoutTask; // <--- Add this line
-    private static final long VIEW_TIMEOUT_MS = 10000;
+    private static final long VIEW_TIMEOUT_MS = 60000;
     private static boolean isTimerRunning = false;
 
     private static Map<String, Message> activeRequestsBuffer = new LinkedHashMap<>();
@@ -275,36 +275,54 @@ public class Node {
                 consensus.handlePrepare(msg);
                 break;
                 */
-
                 //PHASE 2: TODO PREPARE
-                HotStuffMessage hsmsg =  gson.fromJson(msg.getPayload(), HotStuffMessage.class);
-                String requestKey = hsmsg.getProposal().getRequestKey();
-                String command = hsmsg.getProposal().getCommand();
-
-                Message clientMsg = activeRequestsBuffer.get(requestKey);
-
-                RequestState state = pendingClientRequests.get(requestKey);
-
-                if (clientMsg == null) {
-
-                    if (state == RequestState.COMPLETED) {
-                        System.out.println("[NODE] Ignoring stale PREPARE for " + requestKey);
-                        return;
-                    }
-                    
-                    System.out.println("[NODE] Missing request " + requestKey + ", buffering PREPARE");
-                    bufferedPrepare.put(requestKey, msg);
+                // 1. Parse the HotStuff message and extract the proposed Block
+                HotStuffMessage hsmsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
+                Block proposedBlock = hsmsg.getProposal().getBlock();
+                System.out.println("Pending Transactions: " + pendingTransactions.size());
+                System.out.println("proposedBlock: " + proposedBlock);
+                System.out.println("activeRequestsBuffer: " + activeRequestsBuffer.toString());
+                if (proposedBlock == null || proposedBlock.getTransactions() == null) {
+                    System.out.println("[NODE] Received empty or invalid block in PREPARE.");
                     return;
                 }
 
-                JsonObject payloadJson = JsonParser.parseString(clientMsg.getPayload()).getAsJsonObject();
+                // 2. Iterate through every transaction in the block to verify it
+                for (Transaction tx : proposedBlock.getTransactions()) {
+                    String txKey = tx.getRequestKey();
+                    
+                    // Check if we have already completed this specific transaction
+                    if (pendingClientRequests.get(txKey) == RequestState.COMPLETED) {
+                        System.out.println("[NODE] Transaction " + txKey + " already committed, skipping check.");
+                        continue;
+                    }
 
-                String clientCommand = payloadJson.get("text").getAsString();
+                    // Check if we even have the original client message for this transaction
+                    Message clientMsg = activeRequestsBuffer.get(txKey);
+                    
+                    if (clientMsg == null) {
+                        // OPTIONAL: In a robust BFT system, if you are missing a TX, 
+                        // you might buffer the PREPARE or request the missing TX from the leader.
+                        System.out.println("[NODE] Missing client request for " + txKey + ". Buffering PREPARE.");
+                        bufferedPrepare.put(txKey, msg); 
+                        return; // Exit: we cannot vote on a block if we don't know the contents
+                    }
 
-                if (!clientCommand.equals(command)) {
-                    System.out.println("[NODE] Byzantine leader detected: command mismatch for " + requestKey);
-                    return; // do not vote
+                    // 3. Byzantine Check: Verify the transaction in the block matches our buffer
+                    // Parse the original client request to compare
+                    JsonObject clientPayload = JsonParser.parseString(clientMsg.getPayload()).getAsJsonObject();
+                    Transaction originalTx = gson.fromJson(clientPayload.get("transaction"), Transaction.class);
+
+                    // Compare relevant fields (e.g., amount/input, dest, and nonce)
+                    if (originalTx.getNounce() != tx.getNounce() || 
+                        !originalTx.getInput().equals(tx.getInput())) {
+                        System.out.println("[NODE] Byzantine leader detected: Data mismatch for " + txKey);
+                        return; // Refuse to vote
+                    }
                 }
+
+                // 4. If all transactions in the block are valid and recognized
+                System.out.println("[NODE] PREPARE verified for block with " + proposedBlock.getTransactions().size() + " txs.");
                 consensus.handlePrepare(msg);
                 break;
                 
@@ -401,7 +419,8 @@ public class Node {
         }
     }
 
-    private static void proposePendingCommandsIfLeader(Link link, String nodeId) throws Exception {
+    /*
+        private static void proposePendingCommandsIfLeader(Link link, String nodeId) throws Exception {
 
         // Look for the first pending command
         for (Map.Entry<String, Message> entry : activeRequestsBuffer.entrySet()) {
@@ -421,6 +440,33 @@ public class Node {
                 break; // propose one command at a time per view
             }
         }
+    }
+    */
+
+    //Phase 2: new proposePendingCommands
+    private static void proposePendingCommandsIfLeader(Link link, String nodeId) throws Exception {
+        if (!consensus.isLeader()) {
+            return;
+        }
+
+        if (pendingTransactions.isEmpty()) {
+            System.out.println("[NODE] Node " + nodeId + " is leader, but mempool is empty. Skipping proposal.");
+            return;
+        }
+
+        Block newBlock = createBlock();
+
+        System.out.println("[NODE] Node " + nodeId + " (Leader) proposing NEW BLOCK with " 
+                            + newBlock.getTransactions().size() + " transactions.");
+
+        // 4. Send the Block to the consensus engine
+        // Make sure your HotStuffConsensus.addCommand now accepts a Block object
+        // or you might need to rename this to consensus.addBlock(newBlock) 
+        // depending on your implementation.
+        consensus.addBlock(newBlock);
+
+        // 5. Start the Pacemaker to handle the timeout for this specific proposal
+        startPacemaker(link, nodeId);
     }
 
     public static PublicKey stringToPublicKey(String keyString) throws Exception {
@@ -504,7 +550,7 @@ public class Node {
             pendingClientRequests.put(key, RequestState.PENDING);
             activeRequestsBuffer.put(key, msg);
 
-            Message buffered = bufferedPrepare.remove(key);
+            /*Message buffered = bufferedPrepare.remove(key);
             if (buffered != null) {
                 System.out.println("[NODE] Processing buffered PREPARE for " + key);
                 HotStuffMessage hsmsg = gson.fromJson(buffered.getPayload(), HotStuffMessage.class);
@@ -516,10 +562,17 @@ public class Node {
                 }
             }
             System.out.println("[NODE] New request added to pending buffer with key: " + key);
+            */
+            Message delayedPrepare = bufferedPrepare.remove(key);
+            if (delayedPrepare != null) {
+                System.out.println("[NODE] Transaction " + key + " arrived! Resuming buffered PREPARE.");
+                // Re-trigger the PREPARE handling now that we have the data
+                handleMessage(link, nodeId, delayedPrepare, crypto);
+            }
             if (consensus.isLeader()) {
                 //consensus.addCommand(stringToAppend, key);
                 pendingTransactions.add(transaction);
-                startPacemaker(link, nodeId);
+                startBlockCreationTimer(link, nodeId);            
             } else {
                 int leaderId = ((consensus.getViewNumber() - 1) % crypto.l) + 1;
                 link.send(Link.Type.NODE, String.valueOf(leaderId), Message.Type.TRANSACTION, TransferCommand);
@@ -531,7 +584,7 @@ public class Node {
     }
 
     //Phase 2: create new block based on transaction Fee limit?
-    private Block createBlock(Float transactionFeeLimit){
+    private static Block createBlock(Float transactionFeeLimit){
         sortMempool();
         //create a new block with transactions from the mempool that fit within the fee limit
         List<Transaction> blockTransactions = new ArrayList<>();
@@ -558,7 +611,7 @@ public class Node {
     }
 
     //Phase 2: create new block without limit, just sort
-    private Block createBlock(){
+    private static Block createBlock(){
         sortMempool();
         List<Transaction> transac = new ArrayList<>(pendingTransactions);
 
@@ -568,7 +621,7 @@ public class Node {
     }
 
     //Phase 2: sort transactions before creating a block
-    public void sortMempool() {
+    public static void sortMempool() {
         pendingTransactions.sort((a, b) -> {
         // 1. If same sender, strictly follow Nonce order
         if (a.getFrom().equals(b.getFrom())) {
@@ -579,6 +632,26 @@ public class Node {
         // We use b.fee - a.fee for descending order (highest first)
         return Double.compare(b.getGasPrice(), a.getGasPrice());
         });
+    }
+
+    private static ScheduledFuture<?> blockCreationTask;
+
+    private static void startBlockCreationTimer(Link link, String nodeId) {
+        // If a timer is already running, don't start another one
+        if (blockCreationTask != null && !blockCreationTask.isDone()) return;
+
+        blockCreationTask = pacemaker.schedule(() -> {
+            try {
+                if (consensus.isLeader() && !pendingTransactions.isEmpty()) {
+                    System.out.println("[LEADER] 12 seconds elapsed. Creating block with " 
+                                        + pendingTransactions.size() + " txs.");
+                    
+                    proposePendingCommandsIfLeader(link, nodeId);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }, 12, TimeUnit.SECONDS); // The 12-second window your professor mentioned
     }
 
 }

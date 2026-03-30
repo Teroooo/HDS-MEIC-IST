@@ -259,42 +259,24 @@ public class HotStuffConsensus {
         
         System.out.println("[CONSENSUS] Leader " + myId + " received PREPARE_VOTE from node " + msg.getSenderId()
                         + " (collected " + prepareVotes.size() + "/" + (n-f) + ")");
-        if(prepareVotes.size() >= (n - f)) {
-            SigShare[] sigSharesArray = prepareVotes.values().stream().map(HotStuffMessage::getVoteSignature).toArray(SigShare[]::new); 
-            try {       
-                List<HotStuffMessage> msgsList = new ArrayList<>(prepareVotes.values());
-                HotStuffMessage firstMsg = msgsList.get(0);
-                HotStuffMessage lastMsg = msgsList.get(msgsList.size() - 1);
-                /*System.out.println("entrou aqui: " + new String(jsonToVerify.getBytes()));
-                
-                for(SigShare s : sigSharesArray) {
-                    System.out.println("Share from node " + s);
-                }*/
-                Map<String, SigShare> sigSharesMap = new HashMap<>();
-                for (Map.Entry<String, HotStuffMessage> entry : prepareVotes.entrySet()) {
-                    sigSharesMap.put(entry.getKey(), entry.getValue().getVoteSignature());
-                }
+        if (prepareVotes.size() >= (n - f)) {
+            Map<String, SigShare> sigSharesMap = new HashMap<>();
+            for (Map.Entry<String, HotStuffMessage> entry : prepareVotes.entrySet()) {
+                sigSharesMap.put(entry.getKey(), entry.getValue().getVoteSignature());
+            }
 
-                byte[] dataFirst = createVoteData(firstMsg.getViewNumber(), Message.Type.PREPARE_VOTE, firstMsg.getNodeHash());
-                byte[] dataLast = createVoteData(firstMsg.getViewNumber(), Message.Type.PREPARE_VOTE, lastMsg.getNodeHash());
-        
-                if (verifyThresholdVote(sigSharesMap, dataFirst)) {
-                    System.out.println("Threshold first signature successful");
-                    TreeNode verifiedProposal = blockchain.getNode(firstMsg.getNodeHash());
-                    runPreCommitPhase(verifiedProposal);
-                } else if(verifyThresholdVote(sigSharesMap, dataLast)){
-                    System.out.println("Threshold last signature successful");
-                    TreeNode verifiedProposal = blockchain.getNode(lastMsg.getNodeHash());
-                    runPreCommitPhase(verifiedProposal);
-                } else {
-                    if(prepareVotes.size() == n)
-                        System.out.println("Threshold signature verification FAILED");
-                    else
-                        System.out.println("Threshold signature verification FAILED (still waiting for votes)");
-                }
-            } catch (Exception ex) {
-                System.out.println("Threshold signature verification error: " + ex.getMessage());
-                return;
+            // Every node SHOULD have voted for the same nodeHash (currentProposal)
+            // We use the nodeHash from the first vote we received to verify the batch
+            HotStuffMessage firstMsg = prepareVotes.values().iterator().next();
+            byte[] dataToVerify = createVoteData(viewNumber, Message.Type.PREPARE_VOTE, firstMsg.getNodeHash());
+
+            if (verifyThresholdVote(sigSharesMap, dataToVerify)) {
+                System.out.println("[CONSENSUS] Threshold signature successful for view " + viewNumber);
+                TreeNode verifiedProposal = blockchain.getNode(firstMsg.getNodeHash());
+                runPreCommitPhase(verifiedProposal);
+            } else {
+                System.out.println("[CONSENSUS] Threshold signature verification FAILED. " +
+                                "Check if all nodes signed view " + viewNumber + " and the same block hash.");
             }
         }
        
@@ -517,6 +499,8 @@ public class HotStuffConsensus {
         currentProposal = verifiedProposal;
         System.out.println("[CONSENSUS] Leader " + myId + " running DECIDE phase");
         
+        System.out.println("\n[CONSENSUS] Leader checking proposed block: "+ currentProposal.getBlock() + "\n");
+        
         // Create commitQC
         QuorumCertificate commitQC = new QuorumCertificate(QuorumCertificate.QCType.COMMIT, viewNumber, currentProposal.getHash());
         for (Map.Entry<String, HotStuffMessage> entry : commitVotes.entrySet()) {
@@ -629,12 +613,20 @@ public class HotStuffConsensus {
     }
 
     protected byte[] createVoteData(int viewnumber, Message.Type voteType, byte[] nodeHash) {
-        java.util.TreeMap<String, Object> map = new java.util.TreeMap<>();
-        map.put("viewNumber", viewnumber); // Using viewNumber as a stable messageId
-        map.put("type", voteType.toString());
-        map.put("payload", nodeHash == null ? "" : Arrays.toString(nodeHash));
-        
-        return gson.toJson(map).getBytes(StandardCharsets.UTF_8);
+        try {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            java.io.DataOutputStream dos = new java.io.DataOutputStream(baos);
+            
+            dos.writeInt(viewnumber);
+            dos.writeUTF(voteType.toString());
+            if (nodeHash != null) {
+                dos.write(nodeHash);
+            }
+            dos.flush();
+            return baos.toByteArray();
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("Failed to serialize vote data", e);
+        }
     }
     
     

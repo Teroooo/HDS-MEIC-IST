@@ -91,6 +91,8 @@ public class ClientMain {
                     System.out.print("Enter gas_price: ");
                     Float gasPrice = Float.parseFloat(scanner.nextLine());
 
+                    messageId++;
+
                     Transaction txObject = new Transaction(
                         clientId, 
                         destAccount, 
@@ -99,8 +101,7 @@ public class ClientMain {
                         gasLimit, 
                         messageId 
                     );
-
-                    messageId++;
+                    
                     synchronized (responseCounts) {
                         responseCounts.clear();
                     }

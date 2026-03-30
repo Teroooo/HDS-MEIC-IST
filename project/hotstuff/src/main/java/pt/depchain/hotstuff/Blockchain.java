@@ -96,9 +96,9 @@ public class Blockchain {
         
         // Execute commands in order
         for (TreeNode node : pathToCommit) {
-            if (!node.getCommand().equals("GENESIS")) {
-                committedCommands.add(node.getCommand());
-                System.out.println("  [BLOCKCHAIN] Committed: \"" + node.getCommand() + "\" (view " + node.getViewNumber() + ")");
+            if (!node.getBlock().equals("GENESIS")) {
+                committedBlocks.add(node.getBlock());
+                System.out.println("  [BLOCKCHAIN] Committed: \"" + node.getBlock() + "\" (view " + node.getViewNumber() + ")");
             }
         }
         

@@ -5,12 +5,6 @@
                         "host":  "localhost",
                         "pub":  "client1.pub",
                         "id":  "client1"
-                    },
-                    {
-                        "port":  4002,
-                        "host":  "localhost",
-                        "pub":  "client2.pub",
-                        "id":  "client2"
                     }
                 ],
     "nodes":  [

@@ -28,6 +28,7 @@ import pt.depchain.communication.Block;
 import pt.depchain.crypto.CryptoLibrary;
 import pt.depchain.hotstuff.Blockchain;
 import pt.depchain.hotstuff.HotStuffConsensus;
+import pt.depchain.hotstuff.HotStuffConsensus.TransactionRequest;
 import pt.depchain.hotstuff.HotStuffMessage;
 
 public class Node {
@@ -124,8 +125,9 @@ public class Node {
 
         System.out.println("[NODE] Key exchange completed.");
 
-        // Set up callback
-        consensus.setDecideCallback((decidedNode, view) -> {
+        // Set up callback for commands
+        /*
+                consensus.setDecideCallback((decidedNode, view) -> {
             stopPacemaker();
             System.out.println("[NODE] Decision reached at view " + view);
 
@@ -140,6 +142,48 @@ public class Node {
             Message completedMsg = activeRequestsBuffer.remove(requestKey);
             if (completedMsg != null) {
                 pendingClientRequests.put(requestKey, RequestState.COMPLETED);
+            }
+
+            try {
+                boolean hasPending = pendingClientRequests.values()
+                        .stream()
+                        .anyMatch(s -> s == RequestState.PENDING);
+
+                if (hasPending) {
+                    if (consensus.isLeader()) {
+                        proposePendingCommandsIfLeader(link, nodeId);
+                    } else {
+                        startPacemaker(link, nodeId);
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+        */
+
+        //PHASE 2: DECIDECALLBACK
+        consensus.setDecideCallback((decidedNode, view) -> {
+            stopPacemaker();
+            System.out.println("[NODE] Decision reached at view " + view);
+
+            blockchain.executeCommittedBranch(decidedNode);
+            System.out.println(blockchain.getBlockchainStateWithBlocks());
+
+            List<Transaction> committedTxs = decidedNode.getBlock().getTransactions();
+            for (Transaction txReq : committedTxs) {
+                String requestKey = txReq.getRequestKey();
+                String clientId = txReq.getFrom(); // Extract sender ID from the Transaction object
+
+                // 3. Send specialized reply to the SPECIFIC client who sent this TX
+                link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
+                        "Transaction " + requestKey + " SUCCESS in block at view " + view);
+
+                // 4. Cleanup buffers for this specific transaction
+                Message completedMsg = activeRequestsBuffer.remove(requestKey);
+                if (completedMsg != null) {
+                    pendingClientRequests.put(requestKey, RequestState.COMPLETED);
+                }
             }
 
             try {
@@ -183,9 +227,6 @@ public class Node {
             case TRANSACTION:
                 handleTransactionRequest(link, nodeId, msg);
                 break;
-            case TRANSFER_GAS:
-                handleTransferGasRequest(link, nodeId, msg);
-                break;
                 
             case APPEND_STRING:
                 handleAppendRequest(link, nodeId, msg);
@@ -196,6 +237,40 @@ public class Node {
                 break;
                 
             case PREPARE:
+                /*
+                HotStuffMessage hsmsg =  gson.fromJson(msg.getPayload(), HotStuffMessage.class);
+                String requestKey = hsmsg.getProposal().getRequestKey();
+                String command = hsmsg.getProposal().getCommand();
+
+                Message clientMsg = activeRequestsBuffer.get(requestKey);
+
+                RequestState state = pendingClientRequests.get(requestKey);
+
+                if (clientMsg == null) {
+
+                    if (state == RequestState.COMPLETED) {
+                        System.out.println("[NODE] Ignoring stale PREPARE for " + requestKey);
+                        return;
+                    }
+                    
+                    System.out.println("[NODE] Missing request " + requestKey + ", buffering PREPARE");
+                    bufferedPrepare.put(requestKey, msg);
+                    return;
+                }
+
+                JsonObject payloadJson = JsonParser.parseString(clientMsg.getPayload()).getAsJsonObject();
+
+                String clientCommand = payloadJson.get("text").getAsString();
+
+                if (!clientCommand.equals(command)) {
+                    System.out.println("[NODE] Byzantine leader detected: command mismatch for " + requestKey);
+                    return; // do not vote
+                }
+                consensus.handlePrepare(msg);
+                break;
+                */
+
+                //PHASE 2: TODO PREPARE
                 HotStuffMessage hsmsg =  gson.fromJson(msg.getPayload(), HotStuffMessage.class);
                 String requestKey = hsmsg.getProposal().getRequestKey();
                 String command = hsmsg.getProposal().getCommand();
@@ -394,23 +469,58 @@ public class Node {
     }
 
     //phase 2: handle transaction requests from clients
-    public static void handleTransactionRequest(Link link, String nodeId, Message msg) {
-        // Parse transaction details from message
-        // JsonObject payloadJson = JsonParser.parseString(msg.getPayload()).getAsJsonObject();
-        // String from = payloadJson.get("from").getAsString();
-        // String to = payloadJson.get("to").getAsString();
-        // String input = payloadJson.get("input").getAsString();
-        // Float gasPrice = payloadJson.get("gasPrice").getAsFloat();
-        // Float gasLimit = payloadJson.get("gasLimit").getAsFloat();
-        // int nounce = payloadJson.get("nounce").getAsInt();
+    public static void handleTransactionRequest(Link link, String nodeId, Message msg) throws Exception {
+        String TransferCommand = msg.getPayload();
+        JsonObject payloadJson = JsonParser.parseString(TransferCommand).getAsJsonObject();        
+        
+        String clientId = payloadJson.get("clientId").getAsString();
+        int messageId = payloadJson.get("messageId").getAsInt();  
+        Transaction transaction = gson.fromJson(payloadJson.get("transaction"), Transaction.class);      
 
-        // Transaction tx = new Transaction(from, to, input, gasPrice, gasLimit, nounce);
-        // transactionPool.add(tx);
-        // System.out.println("[NODE] Received transaction from " + from + " to " + to + " with fee " + tx.getTransactionFee());
+        String destAccount = transaction.getDest();
+        Float amount = transaction.getInput();
+        Float gasLimit = transaction.getGasLimit();
+        Float gasPrice = transaction.getGasPrice();
+
+        System.out.println("[NODE] Node " + nodeId + " received TRANSFER request from client " + clientId + " to " + destAccount + " for amount " + amount + "\"");
+
+        // If this node is the leader, queue the command
+        String key = clientId + "-" + messageId;
+
+        RequestState state = pendingClientRequests.get(key);
+        //System.out.println("[NODE] Checking for duplicate command with key: " + key);
+        if (state == RequestState.COMPLETED) {
+            System.out.println("[NODE] Request already completed, ignoring.");
+            return;
+        }
+
+        if (state == null) {
+            pendingClientRequests.put(key, RequestState.PENDING);
+            activeRequestsBuffer.put(key, msg);
+
+            Message buffered = bufferedPrepare.remove(key);
+            if (buffered != null) {
+                System.out.println("[NODE] Processing buffered PREPARE for " + key);
+                HotStuffMessage hsmsg = gson.fromJson(buffered.getPayload(), HotStuffMessage.class);
+                Block proposedBlock = hsmsg.getProposal().getBlock();
+                if (!proposedBlock.contains(transaction)) {
+                    System.out.println("[NODE] Byzantine leader detected: block mismatch for " + key);
+                } else {
+                    consensus.handlePrepare(buffered);
+                }
+            }
+            System.out.println("[NODE] New request added to pending buffer with key: " + key);
+            if (consensus.isLeader()) {
+                consensus.addTransaction(transaction, key);
+                startPacemaker(link, nodeId);
+            } else {
+                int leaderId = ((consensus.getViewNumber() - 1) % 4) + 1;
+                link.send(Link.Type.NODE, String.valueOf(leaderId), Message.Type.TRANSACTION, TransferCommand);
+                startPacemaker(link, nodeId);
+                System.out.println("[NODE] Request forwarded. Pacemaker started.");
+            }
+            // store command in consensus queue for ALL replicas
+        }
     }
 
-    public static void handleTransferGasRequest(Link link, String nodeId, Message msg) {
-        // Similar parsing logic to handleTransactionRequest, but for gas transfer transactions
-        // This would involve creating a Transaction object that represents a gas transfer and adding it to the transaction pool
-    }
 }

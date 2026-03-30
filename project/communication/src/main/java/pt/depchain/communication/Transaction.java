@@ -3,21 +3,21 @@ package pt.depchain.communication;
 public class Transaction {
     private String from;
     private String to;
-    private String Input;
+    private Float input;
     private Float gasPrice;
     private Float gasLimit;
     private Float transactionFee; // used to order transactions from different senders based on fee paid
     private int nounce; // used to order transactions from the same sender and prevent replay attacks
     private static final Float GAS_USED = 1f; // Fixed gas used for a simple transfer
 
-    public Transaction(String from, String to, String input, Float gas_price, Float gas_limit, int nounce) {
+    public Transaction(String from, String to, Float input, Float gas_price, Float gas_limit, int nounce) {
         if (gas_price <= 0 || gas_limit <= 0) {
             throw new IllegalArgumentException("Gas price and gas limit must be positive.");
         }
         this.from = from;
         this.to = to;
         this.nounce = nounce;
-        this.Input = input;
+        this.input = input;
         this.gasPrice = gas_price;
         this.gasLimit = gas_limit;
         this.transactionFee = Math.min(gas_price * gas_limit, gas_price * GAS_USED);
@@ -31,20 +31,20 @@ public class Transaction {
         this.from = from;
     }
 
-    public String getTo() {
+    public String getDest() {
         return to;
     }
 
-    public void setTo(String to) {
+    public void setDest(String to) {
         this.to = to;
     }
 
-    public String getInput() {
-        return Input;
+    public Float getInput() {
+        return input;
     }
 
-    public void setInput(String input) {
-        this.Input = input;
+    public void setInput(Float input) {
+        this.input = input;
     }
 
     public Float getGasPrice() {
@@ -77,5 +77,9 @@ public class Transaction {
 
     public void setNounce(int nounce) {
         this.nounce = nounce;
+    }
+
+    public String getRequestKey() {
+        return from + "-" + nounce;
     }
 }

@@ -12,6 +12,7 @@ import threshsig.SigShare;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.stream.Collectors;
 import java.nio.charset.StandardCharsets;
 
 public class HotStuffConsensus {
@@ -616,7 +617,18 @@ public class HotStuffConsensus {
             runPreparePhase();
         }
     }
-    
+
+    //PHASE 2: addTransaction
+    public void addTransaction(Transaction transaction, String requestKey) throws Exception {
+        pendingTransactions.add(new TransactionRequest(transaction, requestKey));
+        System.out.println("[CONSENSUS] Node " + myId + " queued transaction with key " + requestKey + ": \"" + transaction + "\"");
+
+        // If this node is the leader and we have enough NEW_VIEW messages, try to propose
+        if (isLeader() && newViewMessages.size() >= (n - f)) {
+            //PHASE 2: TODO CREATE A BLOCK BEFORE PROTOCOL
+            runPreparePhaseBlock();
+        }
+    }
 
     protected byte[] createVoteData(int viewnumber, Message.Type voteType, byte[] nodeHash) {
         java.util.TreeMap<String, Object> map = new java.util.TreeMap<>();
@@ -776,8 +788,8 @@ public class HotStuffConsensus {
         }
     }
 
-        //Phase 2: create new block based on transaction Fee limit?
-    private Block createBlock(int transactionFeeLimit){
+    //Phase 2: create new block based on transaction Fee limit?
+    private Block createBlock(Float transactionFeeLimit){
         sortMempool();
         //create a new block with transactions from the mempool that fit within the fee limit
         List<Transaction> blockTransactions = new ArrayList<>();
@@ -804,6 +816,18 @@ public class HotStuffConsensus {
         return new Block(blockchain.getLastCommittedNode().getHash().toString(), blockTransactions);
     }
 
+    //Phase 2: create new block based on transaction Fee limit?
+    private Block createBlock(){
+        sortMempool();
+        //create a new block with transactions from the mempool
+        List<Transaction> blockTransactions = pendingTransactions.stream()
+            .map(TransactionRequest::getTransaction)
+            .collect(Collectors.toList());
+
+        pendingTransactions.clear();
+        return new Block(blockchain.getLastCommittedNode().getHash().toString(), blockTransactions);
+    }
+
     //Phase 2: sort transactions before creating a block
     public void sortMempool() {
         pendingTransactions.sort((a, b) -> {
@@ -818,6 +842,60 @@ public class HotStuffConsensus {
         // We use b.fee - a.fee for descending order (highest first)
         return Double.compare(txB.getGasPrice(), txA.getGasPrice());
         });
+    }
+
+    //Phase 2: run prepare phase with a block proposal instead of a command
+    protected void runPreparePhaseBlock() throws Exception {
+        if (!isLeader() || prepareStarted) return;
+
+        prepareStarted = true;
+
+        // Find highQC (highest QC among NEW_VIEW messages)
+        QuorumCertificate highQC = null;
+        for (HotStuffMessage msg : newViewMessages.values()) {
+            if (msg.getQc() != null) {
+                if (highQC == null || msg.getQc().getViewNumber() > highQC.getViewNumber()) {
+                    highQC = msg.getQc();
+                }
+            }
+        }
+        
+        // Create new proposal extending from highQC
+        TreeNode parent;
+        if (highQC != null) {
+            parent = blockchain.getNode(highQC.getNodeHash());
+        } else {
+            parent = blockchain.getLastCommittedNode();
+        }
+        System.out.println("currentProposal: " + currentProposal);
+        if (currentProposal != null) {
+            // Re-propose the previous proposal (crash recovery)
+            pendingCommands.removeIf(cmd -> cmd.requestKey.equals(currentProposal.getRequestKey()));
+            System.out.println("[CONSENSUS] Re-proposing previous proposal: " + currentProposal);
+        } else {
+            // Take a new command from the pending queue
+            CommandRequest cmdReq = pendingCommands.poll();
+            if (cmdReq == null) {
+                prepareStarted = false;
+                System.out.println("[CONSENSUS] No commands to propose, waiting...");
+                return; // nothing to propose
+            }
+            currentProposal = new TreeNode(cmdReq.command, cmdReq.requestKey, parent.getHash(), viewNumber);
+            blockchain.addNode(currentProposal);
+        }
+        
+        System.out.println("[CONSENSUS] Leader " + myId + " running PREPARE phase for view " + viewNumber);
+                
+        // Broadcast PREPARE message
+        HotStuffMessage hsMsg = new HotStuffMessage();
+        hsMsg.setProposal(currentProposal);
+        hsMsg.setQc(highQC);
+        
+        String payload = gson.toJson(hsMsg);
+        for (int nodeId = 1; nodeId <= n; nodeId++) {
+            String nodeString = Integer.toString(getLeader(nodeId));
+            link.send(Link.Type.NODE, nodeString, Message.Type.PREPARE, payload);
+        }
     }
 
 }

@@ -3,6 +3,11 @@
 - Apache Maven above version 3.8.
 - Openssl 3.6.1:27
 
+## Config files
+genesis.json
+groupKey.json
+membership.json
+
 ## Compile & Run
 
 

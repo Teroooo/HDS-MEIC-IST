@@ -101,4 +101,8 @@ public class Block implements Serializable{
         // In a real implementation, you'd want to be more careful about what exactly goes into the hash
         return Integer.toString(this.toString().hashCode());
     }
+
+    public boolean contains(Transaction transaction) {
+        return this.transactions.contains(transaction);
+    }
 }

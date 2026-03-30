@@ -392,7 +392,7 @@ public class Node {
                 consensus.addCommand(stringToAppend, key);
                 startPacemaker(link, nodeId);
             } else {
-                int leaderId = ((consensus.getViewNumber() - 1) % 4) + 1;
+                int leaderId = ((consensus.getViewNumber() - 1) % crypto.l) + 1;
                 link.send(Link.Type.NODE, String.valueOf(leaderId), Message.Type.APPEND_STRING, command);
                 startPacemaker(link, nodeId);
                 System.out.println("[NODE] Request forwarded. Pacemaker started.");
@@ -521,7 +521,7 @@ public class Node {
                 pendingTransactions.add(transaction);
                 startPacemaker(link, nodeId);
             } else {
-                int leaderId = ((consensus.getViewNumber() - 1) % 4) + 1;
+                int leaderId = ((consensus.getViewNumber() - 1) % crypto.l) + 1;
                 link.send(Link.Type.NODE, String.valueOf(leaderId), Message.Type.TRANSACTION, TransferCommand);
                 startPacemaker(link, nodeId);
                 System.out.println("[NODE] Request forwarded. Pacemaker started.");

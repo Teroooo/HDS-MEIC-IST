@@ -119,11 +119,14 @@ public class HotStuffConsensus {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         // view number of the message
         int msgViewNumber = hsMsg.getViewNumber();
+        System.out.println("Received New view from: " + msg.getSenderId());
         //System.out.println("\n\n\nmsgViewNumber: " + msgViewNumber + ", current view: " + viewNumber + "\n\n\n");
         if (msgViewNumber > viewNumber) {
+            System.out.println("\n\n\nmsgViewNumber: " + msgViewNumber + ", current view: " + viewNumber + "\n\n\n");
             futureNewViewMessages.put(msg.getSenderId(), hsMsg);
         } 
         else if (msgViewNumber == viewNumber) {
+            System.out.println("\n\n\nmsgViewNumber: " + msgViewNumber + ", current view: " + viewNumber + "\n\n\n");
             newViewMessages.put(msg.getSenderId(), hsMsg);
         }
         
@@ -259,24 +262,42 @@ public class HotStuffConsensus {
         
         System.out.println("[CONSENSUS] Leader " + myId + " received PREPARE_VOTE from node " + msg.getSenderId()
                         + " (collected " + prepareVotes.size() + "/" + (n-f) + ")");
-        if (prepareVotes.size() >= (n - f)) {
-            Map<String, SigShare> sigSharesMap = new HashMap<>();
-            for (Map.Entry<String, HotStuffMessage> entry : prepareVotes.entrySet()) {
-                sigSharesMap.put(entry.getKey(), entry.getValue().getVoteSignature());
-            }
+        if(prepareVotes.size() >= (n - f)) {
+            SigShare[] sigSharesArray = prepareVotes.values().stream().map(HotStuffMessage::getVoteSignature).toArray(SigShare[]::new); 
+            try {       
+                List<HotStuffMessage> msgsList = new ArrayList<>(prepareVotes.values());
+                HotStuffMessage firstMsg = msgsList.get(0);
+                HotStuffMessage lastMsg = msgsList.get(msgsList.size() - 1);
+                /*System.out.println("entrou aqui: " + new String(jsonToVerify.getBytes()));
+                
+                for(SigShare s : sigSharesArray) {
+                    System.out.println("Share from node " + s);
+                }*/
+                Map<String, SigShare> sigSharesMap = new HashMap<>();
+                for (Map.Entry<String, HotStuffMessage> entry : prepareVotes.entrySet()) {
+                    sigSharesMap.put(entry.getKey(), entry.getValue().getVoteSignature());
+                }
 
-            // Every node SHOULD have voted for the same nodeHash (currentProposal)
-            // We use the nodeHash from the first vote we received to verify the batch
-            HotStuffMessage firstMsg = prepareVotes.values().iterator().next();
-            byte[] dataToVerify = createVoteData(viewNumber, Message.Type.PREPARE_VOTE, firstMsg.getNodeHash());
-
-            if (verifyThresholdVote(sigSharesMap, dataToVerify)) {
-                System.out.println("[CONSENSUS] Threshold signature successful for view " + viewNumber);
-                TreeNode verifiedProposal = blockchain.getNode(firstMsg.getNodeHash());
-                runPreCommitPhase(verifiedProposal);
-            } else {
-                System.out.println("[CONSENSUS] Threshold signature verification FAILED. " +
-                                "Check if all nodes signed view " + viewNumber + " and the same block hash.");
+                byte[] dataFirst = createVoteData(firstMsg.getViewNumber(), Message.Type.PREPARE_VOTE, firstMsg.getNodeHash());
+                byte[] dataLast = createVoteData(firstMsg.getViewNumber(), Message.Type.PREPARE_VOTE, lastMsg.getNodeHash());
+        
+                if (verifyThresholdVote(sigSharesMap, dataFirst)) {
+                    System.out.println("Threshold first signature successful");
+                    TreeNode verifiedProposal = blockchain.getNode(firstMsg.getNodeHash());
+                    runPreCommitPhase(verifiedProposal);
+                } else if(verifyThresholdVote(sigSharesMap, dataLast)){
+                    System.out.println("Threshold last signature successful");
+                    TreeNode verifiedProposal = blockchain.getNode(lastMsg.getNodeHash());
+                    runPreCommitPhase(verifiedProposal);
+                } else {
+                    if(prepareVotes.size() == n)
+                        System.out.println("Threshold signature verification FAILED");
+                    else
+                        System.out.println("Threshold signature verification FAILED (still waiting for votes)");
+                }
+            } catch (Exception ex) {
+                System.out.println("Threshold signature verification error: " + ex.getMessage());
+                return;
             }
         }
        

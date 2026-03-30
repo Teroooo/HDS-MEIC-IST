@@ -42,7 +42,7 @@ public class Node {
     
     private static final ScheduledExecutorService pacemaker = Executors.newSingleThreadScheduledExecutor();
     private static ScheduledFuture<?> timeoutTask; // <--- Add this line
-    private static final long VIEW_TIMEOUT_MS = 60000;
+    private static final long VIEW_TIMEOUT_MS = 20000;
     private static boolean isTimerRunning = false;
 
     private static Map<String, Message> activeRequestsBuffer = new LinkedHashMap<>();
@@ -51,6 +51,8 @@ public class Node {
     private static final Gson gson = new Gson();
 
     private static CryptoLibrary crypto;
+
+    public static float transactionFeeLimit = 150;
 
 
     private static List<Transaction> pendingTransactions = new ArrayList<>();
@@ -71,9 +73,13 @@ public class Node {
                 System.out.println("[PACEMAKER] View " + consensus.getViewNumber() + 
                                    " timed out after request. Leader is likely dead.");
                 isTimerRunning = false;
+                // Move to next view
+                Thread.sleep(100); 
                 consensus.advanceView(); 
                 if (consensus.isLeader()) {
-                    proposePendingCommandsIfLeader(link, nodeId); 
+                    rebuildMempool();
+                    if(!pendingTransactions.isEmpty())
+                        startBlockCreationTimer(link, nodeId); 
                 }
 
                 // Note: We don't start the timer again yet. 
@@ -199,7 +205,9 @@ public class Node {
 
                 if (hasPending) {
                     if (consensus.isLeader()) {
-                        proposePendingCommandsIfLeader(link, nodeId);
+                        rebuildMempool();
+                        if(!pendingTransactions.isEmpty())
+                            startBlockCreationTimer(link, nodeId);
                     } else {
                         startPacemaker(link, nodeId);
                     }
@@ -584,7 +592,7 @@ public class Node {
     }
 
     //Phase 2: create new block based on transaction Fee limit?
-    private static Block createBlock(Float transactionFeeLimit){
+    private static Block createBlock(){
         sortMempool();
         //create a new block with transactions from the mempool that fit within the fee limit
         List<Transaction> blockTransactions = new ArrayList<>();
@@ -610,15 +618,6 @@ public class Node {
         return new Block(blockchain.getLastCommittedNode().getHash().toString(), blockTransactions);
     }
 
-    //Phase 2: create new block without limit, just sort
-    private static Block createBlock(){
-        sortMempool();
-        List<Transaction> transac = new ArrayList<>(pendingTransactions);
-
-        // 3. Clear the mempool so new incoming transactions can fill it up
-        pendingTransactions.clear();
-        return new Block(blockchain.getLastCommittedNode().getHash().toString(), transac);
-    }
 
     //Phase 2: sort transactions before creating a block
     public static void sortMempool() {
@@ -645,13 +644,30 @@ public class Node {
                 if (consensus.isLeader() && !pendingTransactions.isEmpty()) {
                     System.out.println("[LEADER] 12 seconds elapsed. Creating block with " 
                                         + pendingTransactions.size() + " txs.");
-                    
                     proposePendingCommandsIfLeader(link, nodeId);
+                } else {
+                    System.out.println("Consesus is leader: " + consensus.isLeader() + 
+                                        + pendingTransactions.size() + " txs.");
                 }
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }, 12, TimeUnit.SECONDS); // The 12-second window your professor mentioned
     }
-
+    
+    private static void rebuildMempool() {
+        pendingTransactions.clear();
+    
+        for (Map.Entry<String, Message> entry : activeRequestsBuffer.entrySet()) {
+            String key = entry.getKey();
+    
+            if (pendingClientRequests.get(key) == RequestState.PENDING) {
+                JsonObject payload = JsonParser.parseString(entry.getValue().getPayload()).getAsJsonObject();
+                Transaction tx = gson.fromJson(payload.get("transaction"), Transaction.class);
+    
+                pendingTransactions.add(tx);
+            }
+        }
+    }
 }
+

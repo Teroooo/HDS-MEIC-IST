@@ -28,7 +28,6 @@ import pt.depchain.communication.Block;
 import pt.depchain.crypto.CryptoLibrary;
 import pt.depchain.hotstuff.Blockchain;
 import pt.depchain.hotstuff.HotStuffConsensus;
-import pt.depchain.hotstuff.HotStuffConsensus.TransactionRequest;
 import pt.depchain.hotstuff.HotStuffMessage;
 
 public class Node {

@@ -29,7 +29,7 @@ public class TreeNode implements Serializable {
     public TreeNode() {
         this.command = "GENESIS";
         this.block = createGenesisBlock();
-        this.parentHash = this.block.getPreviousHash().getBytes();
+        this.parentHash = this.block.getPreviousHash() != null ? this.block.getPreviousHash().getBytes() : null;
         this.viewNumber = 0;
         this.children = new ArrayList<>();
         this.hash = computeHashFromBlock(); //PHASE 2: BLOCK HASH

@@ -48,9 +48,6 @@ public class Node {
 
     private static CryptoLibrary crypto;
 
-    //PHASE 2: list of pending transactions that have been received but not yet included in a block
-    private static List<Transaction> transactionPool = new ArrayList<>();
-
     enum RequestState {
         PENDING,
         COMPLETED
@@ -396,38 +393,7 @@ public class Node {
         }
     }
 
-
-    //Phase 2: create new block based on transaction Fee limit?
-    private static Block createBlock(int transactionFeeLimit){
-        sortMempool();
-        //create a new block with transactions from the mempool that fit within the fee limit
-        List<Transaction> blockTransactions = new ArrayList<>();
-        Float totalFloat = 0.0f;
-        for(Transaction tx : transactionPool){
-            if(totalFloat + tx.getTransactionFee() <= transactionFeeLimit){
-                blockTransactions.add(tx);
-                totalFloat += tx.getTransactionFee();
-            } else {
-                break; // since mempool is sorted by fee, we can stop here
-            }
-        }
-        return new Block(blockchain.getLastCommittedNode().getHash().toString(), blockTransactions);
-    }
-
-    //Phase 2: sort transactions before creating a block
-    public static void sortMempool() {
-        transactionPool.sort((a, b) -> {
-        // 1. If same sender, strictly follow Nonce order
-        if (a.getFrom().equals(b.getFrom())) {
-            return Integer.compare(a.getNounce(), b.getNounce());
-        }
-        
-        // 2. If different senders, prioritize the higher fee
-        // We use b.fee - a.fee for descending order (highest first)
-        return Double.compare(b.getGasPrice(), a.getGasPrice());
-        });
-    }
-
+    //phase 2: handle transaction requests from clients
     public static void handleTransactionRequest(Link link, String nodeId, Message msg) {
         // Parse transaction details from message
         // JsonObject payloadJson = JsonParser.parseString(msg.getPayload()).getAsJsonObject();

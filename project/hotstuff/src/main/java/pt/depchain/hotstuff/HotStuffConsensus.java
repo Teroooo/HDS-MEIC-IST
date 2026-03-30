@@ -3,6 +3,7 @@ package pt.depchain.hotstuff;
 import com.google.gson.Gson;
 import pt.depchain.communication.Link;
 import pt.depchain.communication.Message;
+import pt.depchain.communication.Transaction;
 import pt.depchain.communication.Block;
 import pt.depchain.crypto.CryptoLibrary;
 import pt.depchain.hotstuff.HotStuffConsensus.CommandRequest;
@@ -48,11 +49,9 @@ public class HotStuffConsensus {
     
     // Command queue (for leader)
     protected final Queue<CommandRequest> pendingCommands = new LinkedBlockingQueue<>();
-    protected final Queue<CommandRequest> pendingCommandsBackup = new LinkedBlockingQueue<>();
 
-    //Phase 2: block queue (for leader)
-    protected final Queue<BlockRequest> pendingBlocks = new LinkedBlockingQueue<>();
-    protected final Queue<BlockRequest> pendingBlocksBackup = new LinkedBlockingQueue<>();
+    //Phase 2: block List (for leader) || its not a queue because we want to be able to sort it
+    protected final List<TransactionRequest> pendingTransactions = new ArrayList<>();
 
     // Callback for when consensus decides
     private DecideCallback decideCallback;
@@ -645,13 +644,17 @@ public class HotStuffConsensus {
     }
 
     //Phase 2: block request
-    protected static class BlockRequest {
-        public final Block block;
+    protected static class TransactionRequest {
+        public final Transaction transaction;
         public final String requestKey;
 
-        BlockRequest(Block block, String requestKey) {
-            this.block = block;
+        TransactionRequest(Transaction transaction, String requestKey) {
+            this.transaction = transaction;
             this.requestKey = requestKey;
+        }
+
+        Transaction getTransaction() {
+            return transaction;
         }
     }
 
@@ -772,4 +775,49 @@ public class HotStuffConsensus {
             System.out.println("[SYNC] Received SINC_VIEW_REPLY but not in sync phase, ignoring.");
         }
     }
+
+        //Phase 2: create new block based on transaction Fee limit?
+    private Block createBlock(int transactionFeeLimit){
+        sortMempool();
+        //create a new block with transactions from the mempool that fit within the fee limit
+        List<Transaction> blockTransactions = new ArrayList<>();
+        Float totalFloat = 0.0f;
+
+        // Track senders who have a transaction that failed to fit
+        Set<String> skippedSenders = new HashSet<>();
+
+        Iterator<TransactionRequest> it = pendingTransactions.iterator();
+        while (it.hasNext()) {
+            TransactionRequest req = it.next();
+            Transaction tx = req.getTransaction();
+
+            if (skippedSenders.contains(tx.getFrom())) continue;
+
+            if (totalFloat + tx.getTransactionFee() <= transactionFeeLimit) {
+                blockTransactions.add(tx);
+                totalFloat += tx.getTransactionFee();
+                it.remove(); // Removes safely from pendingTransactions
+            } else {
+                skippedSenders.add(tx.getFrom());
+            }
+        }
+        return new Block(blockchain.getLastCommittedNode().getHash().toString(), blockTransactions);
+    }
+
+    //Phase 2: sort transactions before creating a block
+    public void sortMempool() {
+        pendingTransactions.sort((a, b) -> {
+            Transaction txA = a.getTransaction();
+            Transaction txB = b.getTransaction();
+        // 1. If same sender, strictly follow Nonce order
+        if (txA.getFrom().equals(txB.getFrom())) {
+            return Integer.compare(txA.getNounce(), txB.getNounce());
+        }
+        
+        // 2. If different senders, prioritize the higher fee
+        // We use b.fee - a.fee for descending order (highest first)
+        return Double.compare(txB.getGasPrice(), txA.getGasPrice());
+        });
+    }
+
 }

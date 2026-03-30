@@ -3,7 +3,9 @@ package pt.depchain.hotstuff;
 import com.google.gson.Gson;
 import pt.depchain.communication.Link;
 import pt.depchain.communication.Message;
+import pt.depchain.communication.Block;
 import pt.depchain.crypto.CryptoLibrary;
+import pt.depchain.hotstuff.HotStuffConsensus.CommandRequest;
 import threshsig.SigShare;
 
 import java.util.*;
@@ -46,6 +48,11 @@ public class HotStuffConsensus {
     
     // Command queue (for leader)
     protected final Queue<CommandRequest> pendingCommands = new LinkedBlockingQueue<>();
+    protected final Queue<CommandRequest> pendingCommandsBackup = new LinkedBlockingQueue<>();
+
+    //Phase 2: block queue (for leader)
+    protected final Queue<BlockRequest> pendingBlocks = new LinkedBlockingQueue<>();
+    protected final Queue<BlockRequest> pendingBlocksBackup = new LinkedBlockingQueue<>();
 
     // Callback for when consensus decides
     private DecideCallback decideCallback;
@@ -622,7 +629,6 @@ public class HotStuffConsensus {
     }
     
     
-
     public interface DecideCallback {
         void onDecide(TreeNode decidedNode, int view) throws Exception;
     }
@@ -637,6 +643,18 @@ public class HotStuffConsensus {
             this.requestKey = requestKey;
         }
     }
+
+    //Phase 2: block request
+    protected static class BlockRequest {
+        public final Block block;
+        public final String requestKey;
+
+        BlockRequest(Block block, String requestKey) {
+            this.block = block;
+            this.requestKey = requestKey;
+        }
+    }
+
 
     public boolean verifyThresholdVote(Map<String, SigShare> votesMap, byte[]... candidateDatas) {
         List<SigShare> votes = new ArrayList<>(votesMap.values());

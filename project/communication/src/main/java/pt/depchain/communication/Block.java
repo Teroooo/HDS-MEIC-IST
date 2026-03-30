@@ -24,6 +24,19 @@ public class Block implements Serializable{
     // No-args constructor is required by Gson
     public Block() {}
 
+    public Block(String previousHash, List<Transaction> transactions) {
+        this.previousHash = previousHash;
+        this.transactions = transactions;
+        this.hash = computeHash();
+    }
+
+    public Block(String previousHash, List<Transaction> transactions, Map<String, State> states) {
+        this.previousHash = previousHash;
+        this.transactions = transactions;
+        this.states = states;
+        this.hash = computeHash();
+    }
+
     public Block(String hash, String previousHash, List<Transaction> transactions, Map<String, State> states) {
         this.hash = hash;
         this.previousHash = previousHash;
@@ -63,6 +76,15 @@ public class Block implements Serializable{
         this.states = states;
     }
 
+    public void addTransaction(Transaction transaction) {
+        this.transactions.add(transaction);
+    }
+
+    public Transaction getTransactionById(int index) {
+        return this.transactions.get(index);
+    }
+    
+
     @Override
     public String toString() {
         // setPrettyPrinting() adds the indentation and line breaks
@@ -72,5 +94,11 @@ public class Block implements Serializable{
                         .serializeNulls() 
                         .create();
         return gson.toJson(this);
+    }
+
+    public String computeHash() {
+        // For simplicity, we can just hash the string representation of the block
+        // In a real implementation, you'd want to be more careful about what exactly goes into the hash
+        return Integer.toString(this.toString().hashCode());
     }
 }

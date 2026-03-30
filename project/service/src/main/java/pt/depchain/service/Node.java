@@ -3,10 +3,12 @@ package pt.depchain.service;
 import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -21,6 +23,8 @@ import com.google.gson.JsonParser;
 
 import pt.depchain.communication.Link;
 import pt.depchain.communication.Message;
+import pt.depchain.communication.Transaction;
+import pt.depchain.communication.Block;
 import pt.depchain.crypto.CryptoLibrary;
 import pt.depchain.hotstuff.Blockchain;
 import pt.depchain.hotstuff.HotStuffConsensus;
@@ -43,6 +47,9 @@ public class Node {
     private static final Gson gson = new Gson();
 
     private static CryptoLibrary crypto;
+
+    //PHASE 2: list of pending transactions that have been received but not yet included in a block
+    private static List<Transaction> transactionPool = new ArrayList<>();
 
     enum RequestState {
         PENDING,
@@ -100,18 +107,18 @@ public class Node {
         // Initialize consensus
         consensus = new HotStuffConsensus(nodeIdInt, crypto.l, (int) Math.floor((crypto.l-1)/3), link, crypto, blockchain);
 
-        // ✅ 1. Start receiver thread FIRST
+        // 1. Start receiver thread FIRST
         startReceiverThread(link, nodeId, crypto);
 
-        // ✅ 2. Wait for nodes to boot
+        // 2. Wait for nodes to boot
         System.out.println("[NODE] Waiting for nodes to start...");
         Thread.sleep(10000);
 
-        // ✅ 3. Start key exchange
+        // 3. Start key exchange
         System.out.println("[NODE] Starting key exchange...");
         initiateKeyExchange(link, nodeId);
 
-        // ✅ 4. Wait until all symmetric keys are established
+        // 4. Wait until all symmetric keys are established
         while (crypto.getSymmetricKeys().size() < crypto.l) {
             System.out.println("[NODE] Waiting for key exchange to complete. Current keys: " 
                 + crypto.getSymmetricKeys().keySet());
@@ -177,10 +184,10 @@ public class Node {
 
         switch (msg.getType()) {
             case TRANSACTION:
-                //handleTransactionRequest(link, nodeId, msg);
+                handleTransactionRequest(link, nodeId, msg);
                 break;
             case TRANSFER_GAS:
-                //handleTransferGasRequest(link, nodeId, msg);
+                handleTransferGasRequest(link, nodeId, msg);
                 break;
                 
             case APPEND_STRING:
@@ -389,11 +396,55 @@ public class Node {
         }
     }
 
-    private static float calculateTransactionFee(Float gas_price, Float gas_limit, Float gas_used) {
-        if (gas_price == null || gas_limit == null || gas_price <= 0 || gas_limit <= 0) {
-            throw new IllegalArgumentException("Gas price and gas limit must be provided");
+
+    //Phase 2: create new block based on transaction Fee limit?
+    private static Block createBlock(int transactionFeeLimit){
+        sortMempool();
+        //create a new block with transactions from the mempool that fit within the fee limit
+        List<Transaction> blockTransactions = new ArrayList<>();
+        Float totalFloat = 0.0f;
+        for(Transaction tx : transactionPool){
+            if(totalFloat + tx.getTransactionFee() <= transactionFeeLimit){
+                blockTransactions.add(tx);
+                totalFloat += tx.getTransactionFee();
+            } else {
+                break; // since mempool is sorted by fee, we can stop here
+            }
         }
-        return Math.min(gas_price * gas_limit, gas_price * gas_used);
+        return new Block(blockchain.getLastCommittedNode().getHash().toString(), blockTransactions);
     }
 
+    //Phase 2: sort transactions before creating a block
+    public static void sortMempool() {
+        transactionPool.sort((a, b) -> {
+        // 1. If same sender, strictly follow Nonce order
+        if (a.getFrom().equals(b.getFrom())) {
+            return Integer.compare(a.getNounce(), b.getNounce());
+        }
+        
+        // 2. If different senders, prioritize the higher fee
+        // We use b.fee - a.fee for descending order (highest first)
+        return Double.compare(b.getGasPrice(), a.getGasPrice());
+        });
+    }
+
+    public static void handleTransactionRequest(Link link, String nodeId, Message msg) {
+        // Parse transaction details from message
+        // JsonObject payloadJson = JsonParser.parseString(msg.getPayload()).getAsJsonObject();
+        // String from = payloadJson.get("from").getAsString();
+        // String to = payloadJson.get("to").getAsString();
+        // String input = payloadJson.get("input").getAsString();
+        // Float gasPrice = payloadJson.get("gasPrice").getAsFloat();
+        // Float gasLimit = payloadJson.get("gasLimit").getAsFloat();
+        // int nounce = payloadJson.get("nounce").getAsInt();
+
+        // Transaction tx = new Transaction(from, to, input, gasPrice, gasLimit, nounce);
+        // transactionPool.add(tx);
+        // System.out.println("[NODE] Received transaction from " + from + " to " + to + " with fee " + tx.getTransactionFee());
+    }
+
+    public static void handleTransferGasRequest(Link link, String nodeId, Message msg) {
+        // Similar parsing logic to handleTransactionRequest, but for gas transfer transactions
+        // This would involve creating a Transaction object that represents a gas transfer and adding it to the transaction pool
+    }
 }

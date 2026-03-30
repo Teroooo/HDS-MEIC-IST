@@ -3,28 +3,28 @@
 "previous_block_hash": null,
 "transactions": [ 
     { 
-    "from": "address_0xContractAccount", 
-    "to": "address_0xB", 
+    "from": "contractAccount_address", 
+    "to": "client2_address", 
     "Input": "0x606045"
     },
     { 
-    "from": "address_0xA", 
+    "from": "client1_address", 
     "to": null, 
     "Input": "0x606045"
     }
     ], 
 "state": { 
-    "address_0xA": 
+    "client1_address": 
         { 
         "balance": "10000",
         "nonce": 0 
         },
-    "address_0xB": 
+    "client2_address": 
         { 
         "balance": "1000",
         "nonce": 0 
         },
-    "address_0xContractAccount": 
+    "contractAccount_address": 
         { 
         "balance": "100000",
         "nonce": 0 

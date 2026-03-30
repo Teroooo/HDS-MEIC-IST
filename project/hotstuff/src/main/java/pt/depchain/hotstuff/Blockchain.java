@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import pt.depchain.communication.Block;
 
 /**
  * Simple in-memory blockchain storage.
@@ -17,14 +18,20 @@ public class Blockchain {
     private final List<String> committedCommands;
     private TreeNode lastCommittedNode;
     
+    private final List<Block> committedBlocks;
+
     public Blockchain() {
         this.root = new TreeNode(); // Genesis block
         this.nodesByHash = new HashMap<>();
+        this.committedBlocks = new ArrayList<>();
         this.committedCommands = new ArrayList<>();
         this.lastCommittedNode = root;
         
         nodesByHash.put(bytesToHex(root.getHash()), root);
         committedCommands.add(root.getCommand());
+
+        //Phase 2: Add genesis block to committed blocks
+        committedBlocks.add(root.getBlock());
     }
     
     public TreeNode getRoot() {
@@ -105,6 +112,10 @@ public class Blockchain {
         return new ArrayList<>(committedCommands);
     }
     
+    public List<Block> getCommittedBlocks() {
+        return new ArrayList<>(committedBlocks);
+    }
+
     /**
      * Get the full blockchain state as a string
      */
@@ -113,6 +124,17 @@ public class Blockchain {
         sb.append("Blockchain (").append(committedCommands.size()).append(" commands):\n");
         for (int i = 0; i < committedCommands.size(); i++) {
             sb.append("  ").append(i).append(": ").append(committedCommands.get(i)).append("\n");
+        }
+        return sb.toString();
+    }
+
+    //PHASE 2:
+    public String getBlockchainStateWithBlocks() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Blockchain (").append(committedBlocks.size()).append(" blocks):\n");
+        for (int i = 0; i < committedBlocks.size(); i++) {
+            sb.append("  Block ").append(i).append(": ").append(committedBlocks.get(i).toString()).append("\n");
+ 
         }
         return sb.toString();
     }
@@ -133,4 +155,5 @@ public class Blockchain {
         }
         return new TreeNode[0];
     }
+
 }

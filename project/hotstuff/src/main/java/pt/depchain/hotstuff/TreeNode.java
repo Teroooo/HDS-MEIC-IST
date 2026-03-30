@@ -1,5 +1,7 @@
 package pt.depchain.hotstuff;
 
+import java.io.FileReader;
+import java.io.IOException;
 import java.io.Serializable;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -7,6 +9,9 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 
+import com.google.gson.Gson;
+
+import pt.depchain.communication.Block;
 public class TreeNode implements Serializable {
     private static final long serialVersionUID = 1L;
     
@@ -16,14 +21,18 @@ public class TreeNode implements Serializable {
     private byte[] hash;
     private List<TreeNode> children;
     private final String requestKey;
+
+    //PHASE 2: BLOCK NODE
+    private final Block block; 
     
     // Root node constructor
     public TreeNode() {
         this.command = "GENESIS";
-        this.parentHash = null;
+        this.block = createGenesisBlock();
+        this.parentHash = this.block.getPreviousHash().getBytes();
         this.viewNumber = 0;
         this.children = new ArrayList<>();
-        this.hash = computeHash();
+        this.hash = computeHashFromBlock(); //PHASE 2: BLOCK HASH
         this.requestKey = "GENESIS";
         System.out.println("  [HASH] Computing hash for node: " + HexFormat.of().formatHex(hash));
     }
@@ -31,6 +40,7 @@ public class TreeNode implements Serializable {
     // Regular node constructor
     public TreeNode(String command, String requestKey, byte[] parentHash, int viewNumber) {
         this.command = command;
+        this.block = null; // No block associated with regular nodes
         this.requestKey = requestKey;
         this.parentHash = parentHash;
         this.viewNumber = viewNumber;
@@ -38,9 +48,25 @@ public class TreeNode implements Serializable {
         this.hash = computeHash();
         System.out.println("  [HASH] Computing hash for node: " + this.hash);
     }
+
+    // PHASE 2: Block node constructor
+    public TreeNode(Block bloco, String requestKey, byte[] parentHash, int viewNumber) {
+        this.command = "bloco";
+        this.block = bloco;
+        this.requestKey = requestKey;
+        this.parentHash = parentHash;
+        this.viewNumber = viewNumber;
+        this.children = new ArrayList<>();
+        this.hash = computeHashFromBlock();
+        System.out.println("  [HASH] Computing hash for node: " + this.hash);
+    }
     
     public String getCommand() {
         return command;
+    }
+
+    public Block getBlock() {
+        return block;
     }
     
     public byte[] getParentHash() {
@@ -85,6 +111,21 @@ public class TreeNode implements Serializable {
             throw new RuntimeException("Failed to compute hash", e);
         }
     }
+
+    // PHASE 2: COMPUTE HASH FROM BLOCK
+    private byte[] computeHashFromBlock() {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(block.toString().getBytes());
+            if (parentHash != null) {
+                digest.update(parentHash);
+            }
+            digest.update(String.valueOf(viewNumber).getBytes());
+            return digest.digest();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to compute hash", e);
+        }
+    }
     
 
     public boolean extendsFrom(TreeNode other) {
@@ -120,5 +161,26 @@ public class TreeNode implements Serializable {
             sb.append(String.format("%02x", b));
         }
         return sb.toString();
+    }
+
+
+    //PHASE 2: Load genesis block from JSON file
+    public static Block createGenesisBlock() {
+        Gson gson = new Gson();
+        Block genesisBlock = null;
+        try (FileReader reader = new FileReader("../config/genesis.json")) {
+            // Converts the JSON text into a Block object
+            genesisBlock = gson.fromJson(reader, Block.class);
+
+            // Accessing the data
+            System.out.println("Loaded Block Hash: " + genesisBlock.getHash());
+            System.out.println("Transactions found: " + genesisBlock.getTransactions().size());
+            System.out.println(genesisBlock.toString());
+            
+        } catch (IOException e) {
+            System.err.println("Could not find or read the genesis file!");
+            e.printStackTrace();
+        }
+        return genesisBlock;
     }
 }

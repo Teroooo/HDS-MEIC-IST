@@ -52,7 +52,7 @@ public class Node {
 
     private static CryptoLibrary crypto;
 
-    public static float transactionFeeLimit = 150;
+    public static long transactionFeeLimit = 700;
 
 
     private static List<Transaction> pendingTransactions = new ArrayList<>();
@@ -122,7 +122,7 @@ public class Node {
 
         // 2. Wait for nodes to boot
         System.out.println("[NODE] Waiting for nodes to start...");
-        Thread.sleep(10000);
+        Thread.sleep(5000);
 
         // 3. Start key exchange
         System.out.println("[NODE] Starting key exchange...");
@@ -184,17 +184,21 @@ public class Node {
 
             List<Transaction> committedTxs = decidedNode.getBlock().getTransactions();
             for (Transaction txReq : committedTxs) {
-                String requestKey = txReq.getRequestKey();
+                String sender = txReq.getFrom();
+                int nonce = txReq.getNonce();
+
+                String txKey = sender + "-" + nonce;
+
                 String clientId = txReq.getFrom(); // Extract sender ID from the Transaction object
 
                 // 3. Send specialized reply to the SPECIFIC client who sent this TX
                 link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
-                        "Transaction " + requestKey + " SUCCESS in block at view " + view);
+                        "Transaction " + txKey + " SUCCESS in block at view " + view);
 
                 // 4. Cleanup buffers for this specific transaction
-                Message completedMsg = activeRequestsBuffer.remove(requestKey);
+                Message completedMsg = activeRequestsBuffer.remove(txKey);
                 if (completedMsg != null) {
-                    pendingClientRequests.put(requestKey, RequestState.COMPLETED);
+                    pendingClientRequests.put(txKey, RequestState.COMPLETED);
                 }
             }
 
@@ -297,7 +301,10 @@ public class Node {
 
                 // 2. Iterate through every transaction in the block to verify it
                 for (Transaction tx : proposedBlock.getTransactions()) {
-                    String txKey = tx.getRequestKey();
+                    String sender = tx.getFrom();
+                    int nonce = tx.getNonce();
+
+                    String txKey = sender + "-" + nonce;
                     
                     // Check if we have already completed this specific transaction
                     if (pendingClientRequests.get(txKey) == RequestState.COMPLETED) {
@@ -322,8 +329,7 @@ public class Node {
                     Transaction originalTx = gson.fromJson(clientPayload.get("transaction"), Transaction.class);
 
                     // Compare relevant fields (e.g., amount/input, dest, and nonce)
-                    if (originalTx.getNounce() != tx.getNounce() || 
-                        !originalTx.getInput().equals(tx.getInput())) {
+                    if (originalTx.getNonce() != tx.getNonce() || !originalTx.getOperation().equals(tx.getOperation()) || !Arrays.equals(originalTx.getArgs(), tx.getArgs())) {
                         System.out.println("[NODE] Byzantine leader detected: Data mismatch for " + txKey);
                         return; // Refuse to vote
                     }
@@ -530,19 +536,25 @@ public class Node {
 
     //phase 2: handle transaction requests from clients
     public static void handleTransactionRequest(Link link, String nodeId, Message msg) throws Exception {
-        String TransferCommand = msg.getPayload();
-        JsonObject payloadJson = JsonParser.parseString(TransferCommand).getAsJsonObject();        
+       
+        JsonObject payloadJson = JsonParser.parseString(msg.getPayload()).getAsJsonObject();        
         
         String clientId = payloadJson.get("clientId").getAsString();
         int messageId = payloadJson.get("messageId").getAsInt();  
-        Transaction transaction = gson.fromJson(payloadJson.get("transaction"), Transaction.class);      
 
-        String destAccount = transaction.getDest();
-        Float amount = transaction.getInput();
-        Float gasLimit = transaction.getGasLimit();
-        Float gasPrice = transaction.getGasPrice();
+        Transaction tx = gson.fromJson(payloadJson.get("transaction"), Transaction.class);      
 
-        System.out.println("[NODE] Node " + nodeId + " received TRANSFER request from client " + clientId + " to " + destAccount + " for amount " + amount + "\"");
+        if (!basicValidation(tx)) {
+            System.out.println("[NODE] Invalid transaction rejected at ingress");
+
+            String txKey = clientId + "-" + messageId;
+
+            // Reply to client with FAILURE
+            link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY, "Transaction " + txKey + " FAILURE (basic validation)");
+            return;
+        }
+
+        String operation = tx.getOperation();
 
         // If this node is the leader, queue the command
         String key = clientId + "-" + messageId;
@@ -558,19 +570,6 @@ public class Node {
             pendingClientRequests.put(key, RequestState.PENDING);
             activeRequestsBuffer.put(key, msg);
 
-            /*Message buffered = bufferedPrepare.remove(key);
-            if (buffered != null) {
-                System.out.println("[NODE] Processing buffered PREPARE for " + key);
-                HotStuffMessage hsmsg = gson.fromJson(buffered.getPayload(), HotStuffMessage.class);
-                Block proposedBlock = hsmsg.getProposal().getBlock();
-                if (!proposedBlock.contains(transaction)) {
-                    System.out.println("[NODE] Byzantine leader detected: block mismatch for " + key);
-                } else {
-                    consensus.handlePrepare(buffered);
-                }
-            }
-            System.out.println("[NODE] New request added to pending buffer with key: " + key);
-            */
             Message delayedPrepare = bufferedPrepare.remove(key);
             if (delayedPrepare != null) {
                 System.out.println("[NODE] Transaction " + key + " arrived! Resuming buffered PREPARE.");
@@ -579,16 +578,19 @@ public class Node {
             }
             if (consensus.isLeader()) {
                 //consensus.addCommand(stringToAppend, key);
-                pendingTransactions.add(transaction);
+                pendingTransactions.add(tx);
                 startBlockCreationTimer(link, nodeId);            
             } else {
                 int leaderId = ((consensus.getViewNumber() - 1) % crypto.l) + 1;
-                link.send(Link.Type.NODE, String.valueOf(leaderId), Message.Type.TRANSACTION, TransferCommand);
+                link.send(Link.Type.NODE, String.valueOf(leaderId), Message.Type.TRANSACTION, msg.getPayload());
                 startPacemaker(link, nodeId);
                 System.out.println("[NODE] Request forwarded. Pacemaker started.");
             }
             // store command in consensus queue for ALL replicas
         }
+
+        System.out.println("[NODE] Node " + nodeId + " received a Transaction from client " + clientId + " with Operation " + tx.getOperation() + "\"");
+
     }
 
     //Phase 2: create new block based on transaction Fee limit?
@@ -596,7 +598,7 @@ public class Node {
         sortMempool();
         //create a new block with transactions from the mempool that fit within the fee limit
         List<Transaction> blockTransactions = new ArrayList<>();
-        Float totalFloat = 0.0f;
+        long totalGas = 0;
 
         // Track senders who have a transaction that failed to fit
         Set<String> skippedSenders = new HashSet<>();
@@ -607,9 +609,10 @@ public class Node {
 
             if (skippedSenders.contains(tx.getFrom())) continue;
 
-            if (totalFloat + tx.getTransactionFee() <= transactionFeeLimit) {
+            long fee = estimateFee(tx);
+            if (totalGas + fee <= transactionFeeLimit) {
                 blockTransactions.add(tx);
-                totalFloat += tx.getTransactionFee();
+                totalGas += fee;
                 it.remove(); // Removes safely from pendingTransactions
             } else {
                 skippedSenders.add(tx.getFrom());
@@ -624,7 +627,7 @@ public class Node {
         pendingTransactions.sort((a, b) -> {
         // 1. If same sender, strictly follow Nonce order
         if (a.getFrom().equals(b.getFrom())) {
-            return Integer.compare(a.getNounce(), b.getNounce());
+            return Integer.compare(a.getNonce(), b.getNonce());
         }
         
         // 2. If different senders, prioritize the higher fee
@@ -669,5 +672,137 @@ public class Node {
             }
         }
     }
+
+    private static boolean basicValidation(Transaction tx) {
+        if (tx == null) return false;
+
+        if (tx.getOperation() == null) return false;
+        if (tx.getArgs() == null) return false;
+
+        if (tx.getGasPrice() <= 0) return false;
+        if (tx.getGasLimit() <= 0) return false;
+
+        switch (tx.getOperation()) {
+
+            case "TRANSFER_DEP":
+            case "TRANSFER_IST": {
+                String[] args = tx.getArgs();
+                if (args.length != 2) return false;
+
+                String to = args[0];
+                String amountStr = args[1];
+
+                if (!isValidAddress(to)) return false;
+
+                try {
+                    long amount = Long.parseLong(amountStr);
+                    if (amount <= 0) return false;
+                } catch (Exception e) {
+                    return false;
+                }
+
+                return true;
+            }
+
+            case "TRANSFERFROM": {
+                String[] args = tx.getArgs();
+                if (args.length != 3) return false;
+
+                String from = args[0];
+                String to = args[1];
+                String amountStr = args[2];
+
+                if (!isValidAddress(from) || !isValidAddress(to)) return false;
+
+                try {
+                    long amount = Long.parseLong(amountStr);
+                    if (amount <= 0) return false;
+                } catch (Exception e) {
+                    return false;
+                }
+
+                return true;
+            }
+
+            case "INCREASE_ALLOWANCE": 
+            case "DECREASE_ALLOWANCE": {
+                String[] args = tx.getArgs();
+            if (args.length != 2) return false;
+
+            String spender = args[0];
+            String amountStr = args[1];
+
+            if (!isValidAddress(spender)) return false;
+
+            try {
+                long amount = Long.parseLong(amountStr);
+                if (amount <= 0) return false;
+            } catch (Exception e) {
+                return false;
+            }
+
+            return true;
+            }
+
+            case "ALLOWANCE": {
+                String[] args = tx.getArgs();
+                if (args.length != 2) return false;
+
+                String owner = args[0];
+                String spender = args[1];
+
+                if (!isValidAddress(owner) || !isValidAddress(spender)) return false;
+
+                return true;
+            }
+            case "BALANCE_DEP":
+            case "BALANCE_IST": {
+                String[] args = tx.getArgs();
+                if (args.length != 0) return false;
+
+                return true;
+            }
+
+            default:
+                return false;
+        }
+
+    }
+
+    private static boolean isValidAddress(String addr) {
+        if (addr == null) return false;
+        if (addr.isEmpty()) return false;
+
+        return addr.matches("[a-zA-Z0-9_-]+");
+    }
+
+    private static long estimateFee(Transaction tx) {
+        return tx.getGasPrice() * estimateGasUsed(tx);
+    }
+
+    private static long estimateGasUsed(Transaction tx) {
+        switch (tx.getOperation()) {
+
+            case "TRANSFER_DEP":
+            case "TRANSFER_IST":
+                return 50;
+
+            case "TRANSFERFROM":
+                return 70;
+
+            case "INCREASE_ALLOWANCE":
+            case "DECREASE_ALLOWANCE":
+                return 40;
+
+            case "ALLOWANCE":
+            case "BALANCE_DEP":
+            case "BALANCE_IST":
+                return 20;
+
+            default:
+                return 0;
+        }
+    }
+
 }
 

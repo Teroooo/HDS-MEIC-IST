@@ -119,14 +119,14 @@ public class HotStuffConsensus {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         // view number of the message
         int msgViewNumber = hsMsg.getViewNumber();
-        System.out.println("Received New view from: " + msg.getSenderId());
+        //System.out.println("Received New view from: " + msg.getSenderId());
         //System.out.println("\n\n\nmsgViewNumber: " + msgViewNumber + ", current view: " + viewNumber + "\n\n\n");
         if (msgViewNumber > viewNumber) {
-            System.out.println("\n\n\nmsgViewNumber: " + msgViewNumber + ", current view: " + viewNumber + "\n\n\n");
+            //System.out.println("\n\n\nmsgViewNumber: " + msgViewNumber + ", current view: " + viewNumber + "\n\n\n");
             futureNewViewMessages.put(msg.getSenderId(), hsMsg);
         } 
         else if (msgViewNumber == viewNumber) {
-            System.out.println("\n\n\nmsgViewNumber: " + msgViewNumber + ", current view: " + viewNumber + "\n\n\n");
+            //System.out.println("\n\n\nmsgViewNumber: " + msgViewNumber + ", current view: " + viewNumber + "\n\n\n");
             newViewMessages.put(msg.getSenderId(), hsMsg);
         }
         

@@ -589,7 +589,7 @@ public class Node {
             // store command in consensus queue for ALL replicas
         }
 
-        System.out.println("[NODE] Node " + nodeId + " received a Transaction from client " + clientId + " with Operation " + tx.getOperation() + "\"");
+        System.out.println("[NODE] Node " + nodeId + " received a Transaction from " + clientId + " with Operation " + tx.getOperation() + "\"");
 
     }
 

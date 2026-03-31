@@ -117,7 +117,7 @@ public class ClientMain {
 
                     send(tx, messageId, gson, link, crypto, clientId);
                     
-                    System.out.println("\nTransfer request  of " + amount + "DEPCOINS sent to " + to + " .");                    
+                    System.out.println("\nTransfer request  of " + amount + " DEPCOINS sent to " + to + " .");                    
                     
                     
                     break;
@@ -151,7 +151,7 @@ public class ClientMain {
                     
                     send(tx, messageId, gson, link, crypto, clientId);
                     
-                    System.out.println("\nTransfer request  of " + amount + "ISTCOINS sent to " + to + " .");                        
+                    System.out.println("\nTransfer request  of " + amount + " ISTCOINS sent to " + to + " .");                        
                     
                     
                     break;

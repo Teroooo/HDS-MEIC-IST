@@ -1,10 +1,17 @@
 package pt.depchain.hotstuff;
 
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
 import pt.depchain.communication.Block;
 
 /**
@@ -21,7 +28,8 @@ public class Blockchain {
     private final List<Block> committedBlocks;
 
     public Blockchain() {
-        this.root = new TreeNode(); // Genesis block
+        Block genesisBlock = loadGenesisBlock();
+        this.root = new TreeNode(genesisBlock); // Genesis block
         this.nodesByHash = new HashMap<>();
         this.committedBlocks = new ArrayList<>();
         this.committedCommands = new ArrayList<>();
@@ -29,6 +37,13 @@ public class Blockchain {
         
         nodesByHash.put(bytesToHex(root.getHash()), root);
         committedCommands.add(root.getCommand());
+
+        if (genesisBlock.getTransactions() != null) {
+            for (Object tx : genesisBlock.getTransactions()) {
+                // TODO: replace with EVMExecutor later
+                System.out.println("[GENESIS] Processing transaction: " + tx.toString());
+            }
+        }
 
         //Phase 2: Add genesis block to committed blocks
         committedBlocks.add(root.getBlock());
@@ -95,10 +110,16 @@ public class Blockchain {
         }
         
         // Execute commands in order
+        int index = committedBlocks.size();
+
         for (TreeNode node : pathToCommit) {
             if (!node.getBlock().equals("GENESIS")) {
                 committedBlocks.add(node.getBlock());
-                System.out.println("  [BLOCKCHAIN] Committed: \"" + node.getBlock() + "\" (view " + node.getViewNumber() + ")");
+
+                persistBlock(node.getBlock(), index);
+                index++;
+
+                System.out.println("  [BLOCKCHAIN] Committed: \"" + node.getBlock() + "\"");
             }
         }
         
@@ -156,4 +177,33 @@ public class Blockchain {
         return new TreeNode[0];
     }
 
+    private Block loadGenesisBlock() {
+        try {
+            Gson gson = new Gson();
+            FileReader reader = new FileReader("../blocks/genesis.json");
+            return gson.fromJson(reader, Block.class);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load genesis block", e);
+        }
+    }
+
+    private void persistBlock(Block block, int index) {
+        try {
+            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+            File dir = new File("../blocks");
+            if (!dir.exists()) dir.mkdirs();
+
+            File file = new File(dir, "block" + index + ".json");
+            FileWriter writer = new FileWriter(file);
+
+            gson.toJson(block, writer);
+            writer.flush();
+            writer.close();
+
+            System.out.println("[BLOCKCHAIN] Persisted block to " + file.getPath());
+
+        } catch (Exception e) {
+            e.printStackTrace();
+    }
+}
 }

@@ -26,13 +26,13 @@ public class TreeNode implements Serializable {
     private final Block block; 
     
     // Root node constructor
-    public TreeNode() {
+    public TreeNode(Block block) {
         this.command = "GENESIS";
-        this.block = createGenesisBlock();
-        this.parentHash = this.block.getPreviousHash() != null ? this.block.getPreviousHash().getBytes() : null;
+        this.block = block;
+        this.parentHash = null;
         this.viewNumber = 0;
         this.children = new ArrayList<>();
-        this.hash = computeHashFromBlock(); //PHASE 2: BLOCK HASH
+        this.hash = HexFormat.of().parseHex(block.getHash());; //PHASE 2: BLOCK HASH
         this.requestKey = "GENESIS";
         System.out.println("  [HASH] Computing hash for node: " + HexFormat.of().formatHex(hash));
     }
@@ -172,24 +172,4 @@ public class TreeNode implements Serializable {
         return sb.toString();
     }
 
-
-    //PHASE 2: Load genesis block from JSON file
-    public static Block createGenesisBlock() {
-        Gson gson = new Gson();
-        Block genesisBlock = null;
-        try (FileReader reader = new FileReader("../config/genesis.json")) {
-            // Converts the JSON text into a Block object
-            genesisBlock = gson.fromJson(reader, Block.class);
-
-            // Accessing the data
-            System.out.println("Loaded Block Hash: " + genesisBlock.getHash());
-            System.out.println("Transactions found: " + genesisBlock.getTransactions().size());
-            System.out.println(genesisBlock.toString());
-            
-        } catch (IOException e) {
-            System.err.println("Could not find or read the genesis file!");
-            e.printStackTrace();
-        }
-        return genesisBlock;
-    }
 }

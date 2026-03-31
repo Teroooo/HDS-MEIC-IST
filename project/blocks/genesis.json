@@ -1,0 +1,22 @@
+{
+    "block_hash": "aa9e12ee9f0188870bd9234356939b50cbdd4781b5dab99744c15fb603a5eb0c", 
+    "previous_block_hash": null,
+    "transactions": [], 
+    "state": { 
+        "client1_address": 
+            { 
+            "balance": "10000",
+            "nonce": 0 
+            },
+        "client2_address": 
+            { 
+            "balance": "1000",
+            "nonce": 0 
+            },
+        "contractAccount_address": 
+            { 
+            "balance": "100000",
+            "nonce": 0 
+            }
+    }
+}

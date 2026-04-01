@@ -13,6 +13,9 @@ import java.util.HashMap;
 public class ClientMain {
     private static volatile int receivedMessages = 0;
     private static final Map<Integer, Map<String, Integer>> responseCounts = new HashMap<>();
+    private static final Map<Integer, Boolean> completed = new HashMap<>();
+
+    public static final String IST_CONTRACT_ADDRESS = "IST_CONTRACT"; // TEMPORARY: for now we just use a placeholder address for the IST contract, but this should be changed to a proper address derived from the contract's public key or something similar
     
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
@@ -57,11 +60,8 @@ public class ClientMain {
                         System.out.println("Received for msgId " + messageIdFromReply + ": " + status + " (" + count + ")");
 
                         if (count == (f + 1)) {
-                            if (status.equals("SUCCESS")) {
-                                System.out.println("String committed");
-                            } else {
-                                System.out.println("String not committed");
-                            }
+                            completed.put(messageIdFromReply, true);
+                            responseCounts.notifyAll(); // wake up sender
                         }
                     } 
                 }
@@ -105,21 +105,46 @@ public class ClientMain {
 
 
                     messageId++;
+                    
+                    String dataStr = "TRANSFER_DEP|" + amount;
+                    byte[] data = dataStr.getBytes();
 
                     Transaction tx = new Transaction(
+                        "DEP",
                         clientId,
-                        "TRANSFER_DEP",
-                        new String[]{to, String.valueOf(amount)},
+                        to,
+                        data,
                         gasPrice,
                         gasLimit,
-                        messageId
+                        messageId,
+                        null     
                     );
 
-                    send(tx, messageId, gson, link, crypto, clientId);
+                    String txString = gson.toJson(tx);
+                    byte[] txBytes = txString.getBytes();
                     
+                    byte[] signature = crypto.sign(txBytes);
+
+                    Transaction signedTx = new Transaction(
+                        tx.getType(),
+                        tx.getFrom(),
+                        tx.getTo(),
+                        tx.getData(),
+                        tx.getGasPrice(),
+                        tx.getGasLimit(),
+                        tx.getNonce(),
+                        signature
+                    );
+
+                    send(signedTx, messageId, gson, link, crypto, clientId);
+                                        
                     System.out.println("\nTransfer request  of " + amount + " DEPCOINS sent to " + to + " .");                    
                     
-                    
+                    synchronized (responseCounts) {
+                        while (!completed.getOrDefault(messageId, false)) {
+                                responseCounts.wait();
+                            }
+                    }
                     break;
                     
                 }
@@ -141,18 +166,41 @@ public class ClientMain {
                     messageId++;
 
                     Transaction tx = new Transaction(
+                        "IST",
                         clientId,
-                        "TRANSFER_IST",
-                        new String[]{to, String.valueOf(amount)},
+                        IST_CONTRACT_ADDRESS, // n sei se depois temos de mudar o address do contract para alguma hash em vez de ser só "IST_CONTRACT", mas para já fica assim
+                        null, //devemos ter o keccak das functions + hash dos args
                         gasPrice,
                         gasLimit,
-                        messageId
+                        messageId,
+                        null //devemos ter a assinatura da transaction, mas para já deixamos null
                     );
                     
-                    send(tx, messageId, gson, link, crypto, clientId);
+                    String txString = gson.toJson(tx);
+                    byte[] txBytes = txString.getBytes();
+
+                    byte[] signature = crypto.sign(txBytes);
+
+                    Transaction signedTx = new Transaction(
+                        tx.getType(),
+                        tx.getFrom(),
+                        tx.getTo(),
+                        tx.getData(),
+                        tx.getGasPrice(),
+                        tx.getGasLimit(),
+                        tx.getNonce(),
+                        signature
+                    );
+
+                    send(signedTx, messageId, gson, link, crypto, clientId);
                     
-                    System.out.println("\nTransfer request  of " + amount + " ISTCOINS sent to " + to + " .");                        
-                    
+                    System.out.println("\nTransfer request  of " + amount + " ISTCOINS sent to " + to + " .");      
+
+                    synchronized (responseCounts) {
+                        while (!completed.getOrDefault(messageId, false)) {
+                                responseCounts.wait();
+                            }
+                    }
                     
                     break;
                 }
@@ -177,15 +225,39 @@ public class ClientMain {
                     messageId++;
 
                     Transaction tx = new Transaction(
+                        "IST",
                         clientId,
-                        "TRANSFERFROM",
-                        new String[]{from, to, String.valueOf(amount)},
+                        IST_CONTRACT_ADDRESS,
+                        null,
                         gasPrice,
                         gasLimit,
-                        messageId
+                        messageId,
+                        null
                     );
 
-                    send(tx, messageId, gson, link, crypto, clientId);
+                    String txString = gson.toJson(tx);
+                    byte[] txBytes = txString.getBytes();
+
+                    byte[] signature = crypto.sign(txBytes);
+
+                    Transaction signedTx = new Transaction(
+                        tx.getType(),
+                        tx.getFrom(),
+                        tx.getTo(),
+                        tx.getData(),
+                        tx.getGasPrice(),
+                        tx.getGasLimit(),
+                        tx.getNonce(),
+                        signature
+                    );
+
+                    send(signedTx, messageId, gson, link, crypto, clientId);
+
+                    synchronized (responseCounts) {
+                        while (!completed.getOrDefault(messageId, false)) {
+                                responseCounts.wait();
+                            }
+                    }
                     break;
                 }
 
@@ -206,15 +278,39 @@ public class ClientMain {
                     messageId++;
 
                     Transaction tx = new Transaction(
+                        "IST",
                         clientId,
-                        "INCREASE_ALLOWANCE",
-                        new String[]{spender, String.valueOf(amount)},
+                        IST_CONTRACT_ADDRESS,
+                        null,
                         gasPrice,
                         gasLimit,
-                        messageId
+                        messageId,
+                        null
                     );
 
-                    send(tx, messageId, gson, link, crypto, clientId);
+                    String txString = gson.toJson(tx);
+                    byte[] txBytes = txString.getBytes();
+
+                    byte[] signature = crypto.sign(txBytes);
+
+                    Transaction signedTx = new Transaction(
+                        tx.getType(),
+                        tx.getFrom(),
+                        tx.getTo(),
+                        tx.getData(),
+                        tx.getGasPrice(),
+                        tx.getGasLimit(),
+                        tx.getNonce(),
+                        signature
+                    );
+
+                    send(signedTx, messageId, gson, link, crypto, clientId);
+
+                    synchronized (responseCounts) {
+                        while (!completed.getOrDefault(messageId, false)) {
+                                responseCounts.wait();
+                            }
+                    }
                     break;
                 }
 
@@ -235,15 +331,39 @@ public class ClientMain {
                     messageId++;
 
                     Transaction tx = new Transaction(
+                        "IST",
                         clientId,
-                        "DECREASE_ALLOWANCE",
-                        new String[]{spender, String.valueOf(amount)},
+                        IST_CONTRACT_ADDRESS,
+                        null,
                         gasPrice,
                         gasLimit,
-                        messageId
+                        messageId,
+                        null
                     );
 
-                    send(tx, messageId, gson, link, crypto, clientId);
+                    String txString = gson.toJson(tx);
+                    byte[] txBytes = txString.getBytes();
+
+                    byte[] signature = crypto.sign(txBytes);
+
+                    Transaction signedTx = new Transaction(
+                        tx.getType(),
+                        tx.getFrom(),
+                        tx.getTo(),
+                        tx.getData(),
+                        tx.getGasPrice(),
+                        tx.getGasLimit(),
+                        tx.getNonce(),
+                        signature
+                    );
+
+                    send(signedTx, messageId, gson, link, crypto, clientId);
+
+                    synchronized (responseCounts) {
+                        while (!completed.getOrDefault(messageId, false)) {
+                                responseCounts.wait();
+                            }
+                    }
                     break;
                 }
 
@@ -264,20 +384,48 @@ public class ClientMain {
                     messageId++;
 
                     Transaction tx = new Transaction(
+                        "IST",
                         clientId,
-                        "ALLOWANCE",
-                        new String[]{owner, spender},
+                        IST_CONTRACT_ADDRESS,
+                        null,
                         gasPrice,
                         gasLimit,
-                        messageId
+                        messageId,
+                        null
                     );
 
-                    send(tx, messageId, gson, link, crypto, clientId);
+                    String txString = gson.toJson(tx);
+                    byte[] txBytes = txString.getBytes();
+
+                    byte[] signature = crypto.sign(txBytes);
+
+                    Transaction signedTx = new Transaction(
+                        tx.getType(),
+                        tx.getFrom(),
+                        tx.getTo(),
+                        tx.getData(),
+                        tx.getGasPrice(),
+                        tx.getGasLimit(),
+                        tx.getNonce(),
+                        signature
+                    );
+
+                    send(signedTx, messageId, gson, link, crypto, clientId);
+
+                    synchronized (responseCounts) {
+                        while (!completed.getOrDefault(messageId, false)) {
+                                responseCounts.wait();
+                            }
+                    }
+
                     break;
                 }
 
                 case "7": { // BALANCE_DEP
                     
+                    System.out.print("Account: ");
+                    String account = scanner.nextLine();
+
                     System.out.print("Gas price: ");
                     long gasPrice = Long.parseLong(scanner.nextLine());
 
@@ -287,16 +435,43 @@ public class ClientMain {
 
                     messageId++;
 
+                    String dataStr = "BALANCE_DEP";
+                    byte[] data = dataStr.getBytes();
+
                     Transaction tx = new Transaction(
+                        "DEP",
                         clientId,
-                        "BALANCE_DEP",
-                        new String[]{},
+                        account,
+                        data,
                         gasPrice,
                         gasLimit,
-                        messageId
+                        messageId,
+                        null
                     );
 
-                    send(tx, messageId, gson, link, crypto, clientId);
+                    String txString = gson.toJson(tx);
+                    byte[] txBytes = txString.getBytes();
+
+                    byte[] signature = crypto.sign(txBytes);
+
+                    Transaction signedTx = new Transaction(
+                        tx.getType(),
+                        tx.getFrom(),
+                        tx.getTo(),
+                        tx.getData(),
+                        tx.getGasPrice(),
+                        tx.getGasLimit(),
+                        tx.getNonce(),
+                        signature
+                    );
+
+                    send(signedTx, messageId, gson, link, crypto, clientId);
+
+                    synchronized (responseCounts) {
+                        while (!completed.getOrDefault(messageId, false)) {
+                                responseCounts.wait();
+                            }
+                    }
                     break;
                 }
 
@@ -312,15 +487,39 @@ public class ClientMain {
                     messageId++;
 
                     Transaction tx = new Transaction(
+                        "IST",
                         clientId,
-                        "BALANCE_IST",
-                        new String[]{},
+                        IST_CONTRACT_ADDRESS,
+                        null,
                         gasPrice,
                         gasLimit,
-                        messageId
+                        messageId,
+                        null
                     );
 
-                    send(tx, messageId, gson, link, crypto, clientId);
+                    String txString = gson.toJson(tx);
+                    byte[] txBytes = txString.getBytes();
+
+                    byte[] signature = crypto.sign(txBytes);
+
+                    Transaction signedTx = new Transaction(
+                        tx.getType(),
+                        tx.getFrom(),
+                        tx.getTo(),
+                        tx.getData(),
+                        tx.getGasPrice(),
+                        tx.getGasLimit(),
+                        tx.getNonce(),
+                        signature
+                    );
+
+                    send(signedTx, messageId, gson, link, crypto, clientId);
+
+                    synchronized (responseCounts) {
+                        while (!completed.getOrDefault(messageId, false)) {
+                                responseCounts.wait();
+                            }
+                    }
                     break;
                 }
 
@@ -347,7 +546,11 @@ public class ClientMain {
                     
                     System.out.println("\nAppend request sent. Waiting for responses...");
                     
-                    
+                    synchronized (responseCounts) {
+                        while (!completed.getOrDefault(messageId, false)) {
+                                responseCounts.wait();
+                            }
+                    }
                     break;
 
                 case "0":
@@ -375,4 +578,10 @@ public class ClientMain {
 
         link.broadcastWithId(replicas, Message.Type.TRANSACTION, payload, messageId);
     }
+
+    // TEMPORARY: for now we just use the clientId as the address, but this should be changed to a proper address derived from the public key
+    private static String getAddress(String clientId) {
+        return clientId; // TEMPORARY
+    }
+
 }

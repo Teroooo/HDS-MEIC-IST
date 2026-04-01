@@ -1,32 +1,40 @@
 package pt.depchain.communication;
 
 public class Transaction {
+    private String Type;
     private String from;
-    private String operation;
-    private String[] args;
+    private String to; // contract account
+    private byte[] data; // encoded function call and arguments
     private long gasPrice;
     private long gasLimit;
     private int nonce; // used to order transactions from the same sender and prevent replay attacks
+    private byte[] signature; 
 
-    public Transaction(String from, String operation, String[] args, long gasPrice, long gasLimit, int nonce) {
+    public Transaction(String Type, String from, String to, byte[] data, long gasPrice, long gasLimit, int nonce, byte[] signature) {
+        this.Type = Type;
         this.from = from;
-        this.operation = operation;
-        this.args = args;
+        this.to = to;
+        this.data = data;
         this.gasPrice = gasPrice;
         this.gasLimit = gasLimit;
         this.nonce = nonce;
+        this.signature = signature;
+    }
+
+    public String getType() {
+        return Type;
     }
 
     public String getFrom() {
         return from;
     }
 
-    public String getOperation() {
-        return operation;
+    public String getTo() {
+        return to;
     }
 
-    public String[] getArgs() {
-        return args;
+    public byte[] getData() {
+        return data;
     }
 
     public long getGasPrice() {
@@ -39,6 +47,10 @@ public class Transaction {
 
     public int getNonce() {
         return nonce;
+    }
+
+    public byte[] getSignature() {
+        return signature;
     }
 
 }

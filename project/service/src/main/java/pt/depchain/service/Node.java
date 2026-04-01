@@ -52,7 +52,7 @@ public class Node {
 
     private static CryptoLibrary crypto;
 
-    public static long transactionFeeLimit = 700;
+    public static long blockGasLimit = 700;
 
 
     private static List<Transaction> pendingTransactions = new ArrayList<>();
@@ -323,16 +323,13 @@ public class Node {
                         return; // Exit: we cannot vote on a block if we don't know the contents
                     }
 
-                    // 3. Byzantine Check: Verify the transaction in the block matches our buffer
-                    // Parse the original client request to compare
-                    JsonObject clientPayload = JsonParser.parseString(clientMsg.getPayload()).getAsJsonObject();
-                    Transaction originalTx = gson.fromJson(clientPayload.get("transaction"), Transaction.class);
-
-                    // Compare relevant fields (e.g., amount/input, dest, and nonce)
-                    if (originalTx.getNonce() != tx.getNonce() || !originalTx.getOperation().equals(tx.getOperation()) || !Arrays.equals(originalTx.getArgs(), tx.getArgs())) {
-                        System.out.println("[NODE] Byzantine leader detected: Data mismatch for " + txKey);
-                        return; // Refuse to vote
+                    // 3. validate transaction again
+        
+                    if (!basicValidation(tx)) {
+                        System.out.println("[NODE] Invalid transaction detected in PREPARE for " + txKey);
+                        return; 
                     }
+                                    
                 }
 
                 // 4. If all transactions in the block are valid and recognized
@@ -554,8 +551,6 @@ public class Node {
             return;
         }
 
-        String operation = tx.getOperation();
-
         // If this node is the leader, queue the command
         String key = clientId + "-" + messageId;
 
@@ -589,7 +584,7 @@ public class Node {
             // store command in consensus queue for ALL replicas
         }
 
-        System.out.println("[NODE] Node " + nodeId + " received a Transaction from " + clientId + " with Operation " + tx.getOperation() + "\"");
+        System.out.println("[NODE] Node " + nodeId + " received a Transaction from " + clientId + "\"");
 
     }
 
@@ -609,10 +604,11 @@ public class Node {
 
             if (skippedSenders.contains(tx.getFrom())) continue;
 
-            long fee = estimateFee(tx);
-            if (totalGas + fee <= transactionFeeLimit) {
+            long gasUsed = estimateGasUsed(tx);
+
+            if (totalGas + gasUsed <= blockGasLimit) {
                 blockTransactions.add(tx);
-                totalGas += fee;
+                totalGas += gasUsed;
                 it.remove(); // Removes safely from pendingTransactions
             } else {
                 skippedSenders.add(tx.getFrom());
@@ -673,134 +669,105 @@ public class Node {
         }
     }
 
+
+    //To do: nonces check, altering sig check based on the new addresses that will be hash(publicKey) instead of clientId
     private static boolean basicValidation(Transaction tx) {
         if (tx == null) return false;
+        if (tx.getFrom() == null || tx.getTo() == null) return false;
 
-        if (tx.getOperation() == null) return false;
-        if (tx.getArgs() == null) return false;
+        if (tx.getData() == null) return false;
 
         if (tx.getGasPrice() <= 0) return false;
         if (tx.getGasLimit() <= 0) return false;
 
-        switch (tx.getOperation()) {
+        if (tx.getData() == null) return false;
 
-            case "TRANSFER_DEP":
-            case "TRANSFER_IST": {
-                String[] args = tx.getArgs();
-                if (args.length != 2) return false;
+        if (tx.getType().equals("DEP")) {
 
-                String to = args[0];
-                String amountStr = args[1];
-
-                if (!isValidAddress(to)) return false;
-
-                try {
-                    long amount = Long.parseLong(amountStr);
-                    if (amount <= 0) return false;
-                } catch (Exception e) {
-                    return false;
-                }
-
-                return true;
-            }
-
-            case "TRANSFERFROM": {
-                String[] args = tx.getArgs();
-                if (args.length != 3) return false;
-
-                String from = args[0];
-                String to = args[1];
-                String amountStr = args[2];
-
-                if (!isValidAddress(from) || !isValidAddress(to)) return false;
-
-                try {
-                    long amount = Long.parseLong(amountStr);
-                    if (amount <= 0) return false;
-                } catch (Exception e) {
-                    return false;
-                }
-
-                return true;
-            }
-
-            case "INCREASE_ALLOWANCE": 
-            case "DECREASE_ALLOWANCE": {
-                String[] args = tx.getArgs();
-            if (args.length != 2) return false;
-
-            String spender = args[0];
-            String amountStr = args[1];
-
-            if (!isValidAddress(spender)) return false;
-
+            String dataString;
             try {
-                long amount = Long.parseLong(amountStr);
-                if (amount <= 0) return false;
+                dataString = new String(tx.getData());
             } catch (Exception e) {
                 return false;
             }
 
-            return true;
+            String[] parts = dataString.split("\\|");
+            if (parts.length < 1) return false;
+
+            String operation = parts[0];
+
+            switch (operation) {
+
+                case "TRANSFER_DEP": {
+                    if (parts.length != 2) return false;
+
+                    try {
+                        long amount = Long.parseLong(parts[1]);
+                        if (amount <= 0) return false;
+                    } catch (Exception e) {
+                        return false;
+                    }
+
+                    return true;
+                }
+
+                case "BALANCE_DEP": {
+                    if (parts.length != 1) return false;
+                    return true;
+                }
+
+                default:
+                    return false;
             }
-
-            case "ALLOWANCE": {
-                String[] args = tx.getArgs();
-                if (args.length != 2) return false;
-
-                String owner = args[0];
-                String spender = args[1];
-
-                if (!isValidAddress(owner) || !isValidAddress(spender)) return false;
-
-                return true;
-            }
-            case "BALANCE_DEP":
-            case "BALANCE_IST": {
-                String[] args = tx.getArgs();
-                if (args.length != 0) return false;
-
-                return true;
-            }
-
-            default:
-                return false;
         }
 
-    }
+        if (tx.getSignature() == null) return false;
 
-    private static boolean isValidAddress(String addr) {
-        if (addr == null) return false;
-        if (addr.isEmpty()) return false;
+            try {
+                Transaction txCopy = new Transaction(
+                    tx.getType(),
+                    tx.getFrom(),
+                    tx.getTo(),
+                    tx.getData(),
+                    tx.getGasPrice(),
+                    tx.getGasLimit(),
+                    tx.getNonce(),
+                    null
+                );
 
-        return addr.matches("[a-zA-Z0-9_-]+");
-    }
+                String txString = gson.toJson(txCopy);
+                byte[] data = txString.getBytes();
 
-    private static long estimateFee(Transaction tx) {
-        return tx.getGasPrice() * estimateGasUsed(tx);
+                boolean valid = crypto.verify(data, tx.getSignature(), "CLIENT-" + tx.getFrom());
+
+                if (!valid) {
+                    System.out.println("[NODE] Signature verification failed for transaction from " + tx.getFrom());
+                    return false;
+                }
+
+            } catch (Exception e) {
+                return false;
+            }
+
+        return true;
     }
 
     private static long estimateGasUsed(Transaction tx) {
-        switch (tx.getOperation()) {
+        if (tx.getType().equals("IST")) {
+            return 75; 
+        }
 
+        String dataString = new String(tx.getData());
+
+        String[] parts = dataString.split("\\|");
+        String operation = parts[0];
+
+        switch (operation) {
             case "TRANSFER_DEP":
-            case "TRANSFER_IST":
-                return 50;
-
-            case "TRANSFERFROM":
-                return 70;
-
-            case "INCREASE_ALLOWANCE":
-            case "DECREASE_ALLOWANCE":
-                return 40;
-
-            case "ALLOWANCE":
-            case "BALANCE_DEP":
-            case "BALANCE_IST":
-                return 20;
+                return 75;
 
             default:
-                return 0;
+                return 30;
         }
     }
 

@@ -92,6 +92,7 @@ public class Block implements Serializable{
         Gson gson = new GsonBuilder()
                         .setPrettyPrinting()
                         .serializeNulls() 
+                        .registerTypeHierarchyAdapter(byte[].class, new ByteArrayHexAdapter())
                         .create();
         return gson.toJson(this);
     }

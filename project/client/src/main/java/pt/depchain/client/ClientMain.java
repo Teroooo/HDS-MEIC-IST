@@ -4,11 +4,16 @@ import pt.depchain.communication.*;
 import pt.depchain.crypto.CryptoLibrary;
 
 import java.net.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Scanner;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.Gson;
 import java.util.Map;
 import java.util.HashMap;
+
+import org.hyperledger.besu.datatypes.Address;
 
 public class ClientMain {
     private static volatile int receivedMessages = 0;
@@ -17,13 +22,21 @@ public class ClientMain {
 
     public static final String IST_CONTRACT_ADDRESS = "IST_CONTRACT"; // TEMPORARY: for now we just use a placeholder address for the IST contract, but this should be changed to a proper address derived from the contract's public key or something similar
     
+    private static String bytecode;
+    private static String allowance;
+    private static String balanceOf;
+    private static String transfer;
+    private static String transferFrom;
+    private static String increaseAllowance;
+    private static String decreaseAllowance;
+
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
             System.err.println("Usage: java ClientMain <clientId> <privateKey> <publicKey>");
             System.exit(1);
         }  
 
-
+        init_keccak_256();
         String clientId = args[0];
         String privateKeyPath = args[1];
         String publicKeyPath = args[2];
@@ -103,17 +116,24 @@ public class ClientMain {
                     System.out.print("Gas limit: ");
                     long gasLimit = Long.parseLong(scanner.nextLine());
 
-
                     messageId++;
-                    
-                    String dataStr = "TRANSFER_DEP|" + amount;
-                    byte[] data = dataStr.getBytes();
+
+                    Address targetAddr = Address.fromHexString(to);
+
+                    // 3. PAD ADDRESS TO 32 BYTES (64 chars)
+                    // We take the hex of the address and add 24 leading zeros
+                    String cleanAddrHex = targetAddr.toHexString().replace("0x", "");
+                    String paddedAddr = "000000000000000000000000" + cleanAddrHex;
+
+                    // 4. CONSTRUCT CALLDATA
+                    // balanceOf selector (8 chars) + padded address (64 chars) = 72 chars
+                    String data = balanceOf + paddedAddr;
 
                     Transaction tx = new Transaction(
                         "DEP",
                         clientId,
                         to,
-                        data,
+                        data.getBytes(),
                         gasPrice,
                         gasLimit,
                         messageId,
@@ -584,4 +604,40 @@ public class ClientMain {
         return clientId; // TEMPORARY
     }
 
+
+    public static void init_keccak_256() {
+        try {
+            // Option 1: Move up one level to the sibling ERC20 folder (../ERC20/...)
+            Path parentErc20 = Path.of("..", "ERC20", "keccak_256.json");
+            // Option 2: Look in a local ERC20 folder (ERC20/...)
+            Path localErc20 = Path.of("ERC20", "keccak_256.json");
+            // Option 3: Current directory
+            Path currentDir = Path.of("keccak_256.json");
+
+            Path jsonPath;
+            if (Files.exists(parentErc20)) {
+                jsonPath = parentErc20;
+            } else if (Files.exists(localErc20)) {
+                jsonPath = localErc20;
+            } else {
+                jsonPath = currentDir;
+            }
+
+            // Read and parse
+            String content = Files.readString(jsonPath);
+            JsonObject jsonObject = JsonParser.parseString(content).getAsJsonObject();
+
+            // Assigning values from JSON
+            bytecode = jsonObject.get("EVM Bytecode").getAsString();
+            allowance = jsonObject.get("allowance(address,address)").getAsString();
+            balanceOf = jsonObject.get("balanceOf(address)").getAsString();
+            transfer = jsonObject.get("transfer(address,uint256)").getAsString();
+            transferFrom = jsonObject.get("transferFrom(address,address,uint256)").getAsString();
+            increaseAllowance = jsonObject.get("increaseAllowance(address,uint256)").getAsString();
+            decreaseAllowance = jsonObject.get("decreaseAllowance(address,uint256)").getAsString();
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load ERC20 selectors from keccak_256.json at specified paths", e);
+        }
+    }
 }

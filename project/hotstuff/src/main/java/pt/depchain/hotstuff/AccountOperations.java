@@ -84,38 +84,38 @@ public class AccountOperations {
         // === Step 1: Create EOAs ===
         Address client1Addr = Address.fromHexString("1111111111111111111111111111111111111111");
         Address client2Addr = Address.fromHexString("2222222222222222222222222222222222222222");
-        Address treasuryAddr = Address.fromHexString("3333333333333333333333333333333333333333");
 
         createAccount(client1Addr, BigInteger.valueOf(10000000));
         createAccount(client2Addr, BigInteger.valueOf(10000000));
-        createAccount(treasuryAddr, BigInteger.valueOf(0));
+        contractAddress = Address.fromHexString("1234567891234567891234567891234567891234");
+        simpleWorld.createAccount(contractAddress, 0, Wei.ZERO);
 
         // === Step 2: Deploy contract (constructor runs here) ===
-        deployContract(client1Addr, treasuryAddr); // deployer = client1, owner = treasury
+        deployContract(client1Addr, contractAddress); // deployer = client1, owner = treasury
 
         MutableAccount account = (MutableAccount) simpleWorld.get(contractAddress);
         System.out.println(account.getCode().size());
 
         // After deploy
         System.out.println("After deploy:");
-        System.out.println("Treasury: " + callBalanceOf(treasuryAddr, treasuryAddr));
+        System.out.println("Contract address: " + callBalanceOf(contractAddress, contractAddress));
         System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
         System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
 
         // // Distribute
-        transfer(treasuryAddr, client1Addr, BigInteger.valueOf(1000));
-        transfer(treasuryAddr, client2Addr, BigInteger.valueOf(1000));
+        transfer(contractAddress, client1Addr, BigInteger.valueOf(1000));
+        transfer(contractAddress, client2Addr, BigInteger.valueOf(1000));
 
         // After distribution
         System.out.println("After distribution:");
-        System.out.println("Treasury: " + callBalanceOf(treasuryAddr, treasuryAddr));
+        System.out.println("Contract address: " + callBalanceOf(contractAddress, contractAddress));
         System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
         System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
 
         // === Step 4: Transfer tokens ===
         System.out.println("\nTransferring 100 tokens from client1 to client2...\n");
 
-        transfer(treasuryAddr, client2Addr, BigInteger.valueOf(100));
+        transfer(contractAddress, client2Addr, BigInteger.valueOf(100));
 
         // === Step 5: Check balances again ===
         System.out.println("After transfer:");
@@ -133,9 +133,6 @@ public class AccountOperations {
     }
 
     public void deployContract(Address deployer, Address owner) {
-        contractAddress = Address.fromHexString("1234567891234567891234567891234567891234");
-        simpleWorld.createAccount(contractAddress, 0, Wei.ZERO);
-
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         PrintStream printStream = new PrintStream(outputStream);
         StandardJsonTracer tracer = new StandardJsonTracer(printStream, true, true, true, true);

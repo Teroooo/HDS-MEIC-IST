@@ -19,8 +19,11 @@ import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.fluent.EVMExecutor;
 import org.hyperledger.besu.evm.fluent.SimpleWorld;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.operation.Operation.OperationResult;
+import org.hyperledger.besu.evm.tracing.OperationTracer;
 import org.hyperledger.besu.evm.tracing.StandardJsonTracer;
 import org.hyperledger.besu.evm.worldstate.WorldUpdater;
+import org.w3c.dom.Node;
 import org.web3j.crypto.Hash;
 import org.web3j.utils.Numeric;
 import org.hyperledger.besu.datatypes.Address;
@@ -84,9 +87,12 @@ public class AccountOperations {
         // === Step 1: Create EOAs ===
         Address client1Addr = Address.fromHexString("1111111111111111111111111111111111111111");
         Address client2Addr = Address.fromHexString("2222222222222222222222222222222222222222");
+        Address client3Addr = Address.fromHexString("3333333333333333333333333333333333333333");
+
 
         createAccount(client1Addr, BigInteger.valueOf(10000000));
         createAccount(client2Addr, BigInteger.valueOf(10000000));
+        createAccount(client3Addr, BigInteger.valueOf(10000000));
         contractAddress = Address.fromHexString("1234567891234567891234567891234567891234");
         simpleWorld.createAccount(contractAddress, 0, Wei.ZERO);
 
@@ -101,26 +107,35 @@ public class AccountOperations {
         System.out.println("Contract address: " + callBalanceOf(contractAddress, contractAddress));
         System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
         System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
+        System.out.println("Client3: " + callBalanceOf(client3Addr, client3Addr));
 
-        // // Distribute
-        transfer(contractAddress, client1Addr, BigInteger.valueOf(1000));
-        transfer(contractAddress, client2Addr, BigInteger.valueOf(1000));
+        String data = balanceOf + padAddress(client1Addr);
+        System.out.println(genericCall(client1Addr, data, true, client3Addr));
+        BigInteger value = BigInteger.valueOf(20);
+        data = transfer + padAddress(client1Addr) + convertIntegerToHex256Bit(value.intValue());
+        genericCall(contractAddress, data, true, client3Addr);
 
-        // After distribution
+
+        // // // Distribute
+        // transfer(contractAddress, client1Addr, BigInteger.valueOf(1000));
+        // transfer(contractAddress, client2Addr, BigInteger.valueOf(1000));
+
+        //After distribution
         System.out.println("After distribution:");
         System.out.println("Contract address: " + callBalanceOf(contractAddress, contractAddress));
         System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
         System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
+        System.out.println("Client3: " + callBalanceOf(client3Addr, client3Addr));
 
-        // === Step 4: Transfer tokens ===
-        System.out.println("\nTransferring 100 tokens from client1 to client2...\n");
+        // // === Step 4: Transfer tokens ===
+        // System.out.println("\nTransferring 100 tokens from client1 to client2...\n");
 
-        transfer(contractAddress, client2Addr, BigInteger.valueOf(100));
+        // transfer(contractAddress, client2Addr, BigInteger.valueOf(100));
 
-        // === Step 5: Check balances again ===
-        System.out.println("After transfer:");
-        System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
-        System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
+        // // === Step 5: Check balances again ===
+        // System.out.println("After transfer:");
+        // System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
+        // System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
     }
 
     public void createAccount(Address accountAddress, BigInteger initialBalance) {
@@ -205,6 +220,201 @@ public class AccountOperations {
         return Bytes.wrap(padded);
     }
 
+
+    public int genericCall(Address senderAddress, String callata, boolean leader, Address NodeAddress) {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        PrintStream printStream = new PrintStream(outputStream);
+
+        StandardJsonTracer tracer = new StandardJsonTracer(printStream, true, true, true, true);
+
+        var executor = EVMExecutor.evm(EvmSpecVersion.CANCUN);
+
+        executor.tracer(tracer);
+        var updater = simpleWorld.updater();
+        executor.worldUpdater(updater);
+
+        executor.sender(senderAddress);
+        executor.receiver(contractAddress);
+        executor.code(simpleWorld.get(contractAddress).getCode());
+        executor.callData(Bytes.fromHexString(callata));
+
+        executor.execute();
+
+
+        updater.commit();
+
+        // System.out.println("=== BALANCEOF TRACER ===");
+        //System.out.println(outputStream.toString());
+        // System.out.println("=== END OF BALANCEOF TRACER ===");
+        long gasUsed = 1; //extractGasUsedFromTrace(outputStream, 1000);
+        
+        System.out.println("=== GENERIC CALL TRACER ===");
+        //System.out.println(outputStream.toString());
+        // 4. If Leader, reward the NodeAddress account
+        if (leader && NodeAddress != null) {
+            System.out.println("=== LEADER REWARD ===");
+            // Get the mutable account for the leader
+            var leaderAccount = updater.getOrCreate(NodeAddress);
+            
+            // Assuming a gas price of 1 (rewarding 1 Wei per gas used)
+            Wei reward = Wei.of(gasUsed); 
+            
+            // Update the balance
+            leaderAccount.setBalance(leaderAccount.getBalance().add(reward));
+            
+            System.out.println("Leader " + NodeAddress + " rewarded with " + gasUsed + " Wei.");
+        }
+
+        System.out.println();
+        return extractIntegerFromReturnData(outputStream);
+    }
+
+    public static long extractGasUsedFromTrace(ByteArrayOutputStream outputStream, long initialGas) {
+        String[] lines = outputStream.toString().split("\\r?\\n");
+        if (lines.length == 0) return 0;
+
+        // The last line or second-to-last line usually contains the final state
+        // We look for the "gas" field in the JSON
+        try {
+            JsonObject lastStep = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
+            
+            // Besu JsonTracer uses "gas" for remaining gas in hex (e.g., "0x...").
+            String gasHex = lastStep.get("gas").getAsString();
+            long gasRemaining = Long.decode(gasHex);
+            
+            return initialGas - gasRemaining;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /*
+    public int genericCall(String sender, String data, boolean leader, String NodeAddress) {
+
+        Address senderAddress = getAddressFromString(sender);
+
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+
+        PrintStream printStream = new PrintStream(byteArrayOutputStream);
+
+       
+
+        final long initialGas = 10_000_000L;
+
+        long[] gasUsedContainer = new long[1];
+
+
+
+        StandardJsonTracer jsonTracer = new StandardJsonTracer(printStream, true, true, true, true);
+
+
+
+        // Manual Tracer Wrapper for Besu 25.6.0
+
+        OperationTracer combinedTracer = new OperationTracer() {
+
+            @Override
+
+            public void tracePreExecution(MessageFrame frame) {
+
+                jsonTracer.tracePreExecution(frame);
+
+            }
+
+
+
+            @Override
+
+            public void tracePostExecution(MessageFrame frame, OperationResult operationResult) {
+
+                jsonTracer.tracePostExecution(frame, operationResult);
+
+                // Capture gas used: Initial - Remaining
+
+                gasUsedContainer[0] = initialGas - frame.getRemainingGas();
+
+            }
+
+           
+
+            // Some Besu versions require traceContextEnter/Exit - if so, add them as empty
+
+        };
+
+
+
+        var executor = EVMExecutor.evm(EvmSpecVersion.CANCUN);
+
+        executor.tracer(combinedTracer);
+
+        executor.gasLimit(initialGas);
+
+        executor.code(Bytes.fromHexString(bytecode));
+
+        executor.sender(senderAddress);
+
+        executor.receiver(contractAccount.getAddress());
+
+       
+
+        // Use the same updater for both execution and balance updates
+
+        var worldUpdater = simpleWorld.updater();
+
+        executor.worldUpdater(worldUpdater);
+
+        executor.commitWorldState();
+
+        executor.callData(Bytes.fromHexString(data));
+
+
+
+        var resultBytes = executor.execute();
+
+
+
+        int returnVal = extractIntegerFromReturnData(byteArrayOutputStream);
+
+       
+
+        long gasUsed = gasUsedContainer[0];
+
+        if (leader) {
+
+            long gasPrice = 1L;
+
+            Wei rewardAmount = Wei.of(gasUsed * gasPrice);
+
+
+
+            // Map the NodeAddress string to a Besu Address
+
+            Address leaderAccountAddress = getAddressFromString(NodeAddress);
+
+           
+
+            // Modify the state directly
+
+            var account = worldUpdater.getOrCreate(leaderAccountAddress);
+
+            account.setBalance(account.getBalance().add(rewardAmount));
+
+           
+
+            // CRITICAL: Commit to finalize the balance change
+
+            worldUpdater.commit();
+
+        }
+
+
+
+        System.out.println("Output: " + returnVal + " | Gas Used: " + gasUsed);
+
+        return returnVal;
+
+    } */
+
     public int callBalanceOf(Address caller, Address target) {
 
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
@@ -239,6 +449,7 @@ public class AccountOperations {
         return extractIntegerFromReturnData(outputStream);
     }
 
+    
     public void transfer(Address sender, Address to, BigInteger value) {
 
         String data =

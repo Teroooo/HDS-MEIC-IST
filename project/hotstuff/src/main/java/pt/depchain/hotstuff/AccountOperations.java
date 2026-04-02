@@ -98,29 +98,29 @@ public class AccountOperations {
 
         // After deploy
         System.out.println("After deploy:");
-        // System.out.println("Treasury: " + callBalanceOf(treasuryAddr, treasuryAddr));
-        // System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
-        // System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
+        System.out.println("Treasury: " + callBalanceOf(treasuryAddr, treasuryAddr));
+        System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
+        System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
 
         // // Distribute
-        // transfer(treasuryAddr, client1Addr, BigInteger.valueOf(1000));
-        // transfer(treasuryAddr, client2Addr, BigInteger.valueOf(1000));
+        transfer(treasuryAddr, client1Addr, BigInteger.valueOf(1000));
+        transfer(treasuryAddr, client2Addr, BigInteger.valueOf(1000));
 
-        // // After distribution
-        // System.out.println("After distribution:");
-        // System.out.println("Treasury: " + callBalanceOf(treasuryAddr, treasuryAddr));
-        // System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
-        // System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
+        // After distribution
+        System.out.println("After distribution:");
+        System.out.println("Treasury: " + callBalanceOf(treasuryAddr, treasuryAddr));
+        System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
+        System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
 
-        // // === Step 4: Transfer tokens ===
-        // System.out.println("\nTransferring 100 tokens from client1 to client2...\n");
+        // === Step 4: Transfer tokens ===
+        System.out.println("\nTransferring 100 tokens from client1 to client2...\n");
 
-        // transfer(treasuryAddr, client2Addr, BigInteger.valueOf(100));
+        transfer(treasuryAddr, client2Addr, BigInteger.valueOf(100));
 
-        // // === Step 5: Check balances again ===
-        // System.out.println("After transfer:");
-        // System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
-        // System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
+        // === Step 5: Check balances again ===
+        System.out.println("After transfer:");
+        System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
+        System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
     }
 
     public void createAccount(Address accountAddress, BigInteger initialBalance) {
@@ -131,7 +131,6 @@ public class AccountOperations {
         account.setBalance(Wei.of(initialBalance));
         userAccounts.put(accountAddress.toHexString(), account);
     }
-
 
     public void deployContract(Address deployer, Address owner) {
         contractAddress = Address.fromHexString("1234567891234567891234567891234567891234");
@@ -146,31 +145,58 @@ public class AccountOperations {
         WorldUpdater updater = simpleWorld.updater();
         executor.worldUpdater(updater);
         executor.messageFrameType(MessageFrame.Type.CONTRACT_CREATION);
-
         executor.sender(deployer);
 
         Bytes initCode = Bytes.fromHexString(deploymentBytecode);
         Bytes constructorArgs = encodeAddress(owner);
-
         Bytes input = Bytes.concatenate(initCode, constructorArgs);
 
-        System.out.println(constructorArgs.toHexString());
         executor.code(input);
         executor.callData(Bytes.EMPTY);
-        
         executor.execute();
-        MutableAccount acc = (MutableAccount) simpleWorld.get(contractAddress);
-        System.out.println("Code before commit: " + acc.getCode());
-        
+
+        Bytes runtimeCode = extractRuntimeCode(outputStream);
+
+        // Extrair o storage final do trace (último frame antes do RETURN)
+        Map<UInt256, UInt256> finalStorage = extractStorageFromTrace(outputStream);
+
         updater.commit();
-        acc = (MutableAccount) simpleWorld.get(contractAddress);
-        System.out.println("Code after commit: " + acc.getCode());
-        //Bytes runtimeCode = extractRuntimeCode(outputStream);
-        //account.setCode(runtimeCode);
-        
-        //System.out.println(outputStream);
+
+        MutableAccount deployed = (MutableAccount) simpleWorld.get(contractAddress);
+        deployed.setCode(runtimeCode);
+
+        // Aplicar o storage manualmente
+        for (Map.Entry<UInt256, UInt256> entry : finalStorage.entrySet()) {
+            deployed.setStorageValue(entry.getKey(), entry.getValue());
+        }
+
+        System.out.println("Storage slot 3 (totalSupply): " + deployed.getStorageValue(UInt256.valueOf(3)));
+        System.out.println("Code size: " + deployed.getCode().size());
         System.out.println("Contract deployed at: " + contractAddress);
-        // System.out.println("Runtime code length: " + (account.getCode() == null ? 0 : account.getCode().size()));
+    }
+
+    private static Map<UInt256, UInt256> extractStorageFromTrace(ByteArrayOutputStream outputStream) {
+        String[] lines = outputStream.toString().split("\\r?\\n");
+        Map<UInt256, UInt256> storage = new HashMap<>();
+
+        // Percorrer do fim para encontrar o último frame com storage
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) continue;
+
+            JsonObject obj = JsonParser.parseString(line).getAsJsonObject();
+
+            if (obj.has("storage")) {
+                JsonObject storageJson = obj.getAsJsonObject("storage");
+                for (String key : storageJson.keySet()) {
+                    UInt256 k = UInt256.fromHexString(key);
+                    UInt256 v = UInt256.fromHexString(storageJson.get(key).getAsString());
+                    storage.put(k, v);
+                }
+                break; // último frame com storage é suficiente
+            }
+        }
+        return storage;
     }
     
     private Bytes encodeAddress(Address addr) {

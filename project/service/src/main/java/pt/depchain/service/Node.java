@@ -366,12 +366,6 @@ public class Node {
             case KEY_EXCHANGE_REPLY:
                 handleKeyExchangeReply(msg, crypto);
                 break;
-            case SINC_VIEW_REQUEST:
-                consensus.handleSincView(link, msg);
-                break;
-            case SINC_VIEW_REPLY:
-                consensus.handleSincViewReply(link, msg); 
-                break;
             default:
                 System.out.println("[NODE] Unknown message type from " + msg.getSenderId());
         }

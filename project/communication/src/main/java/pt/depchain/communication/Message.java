@@ -25,8 +25,6 @@ public class Message implements Serializable {
         REPLY,
         KEY_EXCHANGE,
         KEY_EXCHANGE_REPLY,
-        SINC_VIEW_REQUEST,
-        SINC_VIEW_REPLY,
         TRANSACTION
     }
 

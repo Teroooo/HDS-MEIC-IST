@@ -115,7 +115,7 @@ function Write-GenesisJson {
         $rawHash = Get-PublicKeyHashHex (Join-Path $ConfigDir "client$i.pub")
         $hash = Set-AddressFormat $rawHash
         $clientHashes += $hash
-        $newState[$hash] = @{ balance = "10000"; nonce = 0 }
+        $newState[$hash] = @{ balance = "1000000"; nonce = 0 }
     }
 
     # Process Nodes/Replicas

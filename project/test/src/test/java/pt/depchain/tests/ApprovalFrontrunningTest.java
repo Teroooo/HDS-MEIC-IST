@@ -35,7 +35,7 @@ public class ApprovalFrontrunningTest {
     }
 
     @Test
-    public void testCommandOneConsensus() throws Exception {
+    public void testApprovalFrontrunningConsensus() throws Exception {
         freeAllPorts();
         List<Process> nodes = new ArrayList<>();
         List<Process> clients = new ArrayList<>();
@@ -56,7 +56,7 @@ public class ApprovalFrontrunningTest {
                 nodes.add(node);
 
                 // Print node logs asynchronously
-                //new Thread(() -> printProcessOutput(node, "NODE-" + nodeId)).start(); // use nodeId           
+                //new Thread(() -> printProcessOutput(node, "NODE-" + nodeId)).start(); // use nodeId
             }
 
             // Wait a few seconds for nodes to initialize
@@ -77,7 +77,7 @@ public class ApprovalFrontrunningTest {
             }
 
             // Print client logs asynchronously
-            //new Thread(() -> printProcessOutput(clientProcess, "CLIENT-1")).start();
+            //new Thread(() -> printProcessOutput(clients.get(1), "CLIENT-1")).start();
 
             // Give client a second to start
             Thread.sleep(30000);
@@ -105,9 +105,10 @@ public class ApprovalFrontrunningTest {
 
             // Wait for block to be commited
             Thread.sleep(30000);
+            //System.out.println("BLOCK 1 DONE");
 
             //client 1: decrese allowance 
-            clientOneWriter.write("4\n"); // select increase allowance
+            clientOneWriter.write("5\n"); // select decrease allowance
             clientOneWriter.flush();
             Thread.sleep(200); // small delay
             clientOneWriter.write("client2\n"); // spender
@@ -135,7 +136,7 @@ public class ApprovalFrontrunningTest {
             clientTwoWriter.write("100\n"); // amount
             clientTwoWriter.flush();
             Thread.sleep(200); // small delay
-            clientTwoWriter.write("1\n"); // gas price
+            clientTwoWriter.write("2\n"); // gas price
             clientTwoWriter.flush();
             Thread.sleep(200); // small delay
             clientTwoWriter.write("100000\n"); // gas limit
@@ -144,6 +145,7 @@ public class ApprovalFrontrunningTest {
 
             // Wait for block to be commited
             Thread.sleep(30000);
+            //System.out.println("BLOCK 2 DONE");
 
             //client 2: Transfer From 
             clientTwoWriter.write("3\n"); // select increase allowance
@@ -163,13 +165,16 @@ public class ApprovalFrontrunningTest {
             clientTwoWriter.write("100000\n"); // gas limit
             clientTwoWriter.flush();
 
+            // Wait for block to be commited
+            Thread.sleep(30000);
+            //System.out.println("BLOCK 3 DONE");
 
             // Check nodes’ outputs for the appended string
             boolean[] found = new boolean[nodes.size()];
             long start = System.currentTimeMillis();
-            long timeout = 30000; // 30 seconds max
-            long foundCount = 0;
-            String something = "";
+            long timeout = 40000; // 40 seconds max
+            int foundCount = 0;
+
             while (System.currentTimeMillis() - start < timeout) {
                 for (int i = 0; i < nodes.size(); i++) {
                     // Skip nodes we already found to save processing time
@@ -178,7 +183,7 @@ public class ApprovalFrontrunningTest {
                     Process node = nodes.get(i);
                     String nodeOutput = readProcessOutputNonBlocking(node);
                     
-                    if (nodeOutput.contains(something)) {
+                    if (nodeOutput.contains("Generic call result: FAILURE")) {
                         found[i] = true;
                         System.out.println("Node " + i + " confirmed the transaction.");
                     }
@@ -198,7 +203,9 @@ public class ApprovalFrontrunningTest {
                 Thread.sleep(200);
             }
 
-            assertTrue(foundCount >= 3, "Blockchain should contain the transaction on at least 3 nodes");
+            //System.out.println("Client output: " + clientOutput);
+            //Thread.sleep(50000); // small delay
+            assertTrue(foundCount >= 3, "Blockchain TRANSFER_FROM failed");
 
         } finally {
             // Kill all nodes

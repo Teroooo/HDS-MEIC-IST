@@ -38,14 +38,14 @@ public class LeaderCrashAppendTest {
     public void testAppendStringConsensus() throws Exception {
         freeAllPorts();
         List<Process> nodes = new ArrayList<>();
-        Process client = null;
+        List<Process> clients = new ArrayList<>();
 
         try {
             // Start 4 nodes
             for (int i = 1; i <= 4; i++) {
                 final int nodeId = i; // copy for lambda
                 ProcessBuilder pb = new ProcessBuilder(
-                        "mvn", "exec:java",
+                        "cmd", "/c", "mvn", "exec:java",
                         "-Dexec.mainClass=pt.depchain.service.Node",
                         "-Dexec.args=" + i +
                         " ../config/node" + i + ".priv" +
@@ -61,18 +61,22 @@ public class LeaderCrashAppendTest {
 
             // Wait a few seconds for nodes to initialize
             Thread.sleep(1000);
-
-            // Start client
-            ProcessBuilder pbClient = new ProcessBuilder(
-                    "mvn", "exec:java",
+            for (int i = 0; i < 2; i++) {
+                ProcessBuilder pbClient = new ProcessBuilder(
+                    "cmd", "/c", "mvn", "exec:java",
                     "-Dexec.mainClass=pt.depchain.client.ClientMain",
                     "-Dexec.args=client1 ../config/client1.priv ../config/client1.pub"
-            );
-            pbClient.redirectErrorStream(true);
-            client = pbClient.start();
-            final Process clientProcess = client;
-            BufferedWriter clientWriter = new BufferedWriter(new OutputStreamWriter(client.getOutputStream()));
-            BufferedReader clientReader = new BufferedReader(new InputStreamReader(client.getInputStream()));
+                );
+                pbClient.redirectErrorStream(true);
+                Process client = pbClient.start();
+                final Process clientProcess = client;
+                clients.add(clientProcess);
+            }
+
+            // Start client
+
+            BufferedWriter client1Writer = new BufferedWriter(new OutputStreamWriter(clients.get(0).getOutputStream()));
+            BufferedReader client1Reader = new BufferedReader(new InputStreamReader(clients.get(0).getInputStream()));
 
             // Print client logs asynchronously
             //new Thread(() -> printProcessOutput(clientProcess, "CLIENT-1")).start();
@@ -80,12 +84,21 @@ public class LeaderCrashAppendTest {
             // Give client a second to start
             Thread.sleep(1000);
 
-            // Send "Append String" command: choose option 1 and then type "test"
-            clientWriter.write("1\n"); // select append
-            clientWriter.flush();
+            //client 2: Transfer From 
+            client1Writer.write("2\n"); // select transfer DEP
+            client1Writer.flush();
             Thread.sleep(200); // small delay
-            clientWriter.write("correto\n"); // string to append
-            clientWriter.flush();
+            client1Writer.write("client2\n"); // to
+            client1Writer.flush();
+            Thread.sleep(200); // small delay
+            client1Writer.write("100\n"); // amount
+            client1Writer.flush();
+            Thread.sleep(200); // small delay
+            client1Writer.write("1\n"); // gas price
+            client1Writer.flush();
+            Thread.sleep(200); // small delay
+            client1Writer.write("100000\n"); // gas limit
+            client1Writer.flush();
 
             // Wait for consensus to happen
             Thread.sleep(4000);
@@ -93,12 +106,12 @@ public class LeaderCrashAppendTest {
             // Check nodes’ outputs for the appended string
             boolean found = false;
             long start = System.currentTimeMillis();
-            long timeout = 10000; // 10 seconds max
+            long timeout = 30000; // 30 seconds max
 
             while (System.currentTimeMillis() - start < timeout) {
                 for (Process node : nodes) {
                     String nodeOutput = readProcessOutputNonBlocking(node);
-                    if (nodeOutput.contains("correto")) {
+                    if (nodeOutput.contains("Generic call result: SUCCESS") && nodeOutput.contains("Decision reached")) {
                         found = true;
                         break;
                     }
@@ -107,19 +120,28 @@ public class LeaderCrashAppendTest {
                 Thread.sleep(200); // small delay
             }
 
-            assertTrue(found, "Blockchain should contain the appended string 'correto'");
+            assertTrue(found, "Blockchain reached consensus and successfully did the transfer");
 
             Thread.sleep(200); // small delay
             nodes.get(1).destroyForcibly();
             Thread.sleep(200); // small delay
 
 
-            // Send "Append String" command: choose option 1 and then type "test"
-            clientWriter.write("1\n"); // select append
-            clientWriter.flush();
+            //client 2: Transfer From 
+            client1Writer.write("2\n"); // select transfer DEP
+            client1Writer.flush();
             Thread.sleep(200); // small delay
-            clientWriter.write("leadercrash\n"); // string to append
-            clientWriter.flush();
+            client1Writer.write("client2\n"); // to
+            client1Writer.flush();
+            Thread.sleep(200); // small delay
+            client1Writer.write("100\n"); // amount
+            client1Writer.flush();
+            Thread.sleep(200); // small delay
+            client1Writer.write("1\n"); // gas price
+            client1Writer.flush();
+            Thread.sleep(200); // small delay
+            client1Writer.write("100000\n"); // gas limit
+            client1Writer.flush();
 
             // Wait for consensus to happen
             Thread.sleep(4000);
@@ -136,7 +158,7 @@ public class LeaderCrashAppendTest {
                         continue;
                     }
                     String nodeOutput = readProcessOutputNonBlocking(node);
-                    if (nodeOutput.contains("leadercrash")) {
+                    if (nodeOutput.contains("Generic call result: SUCCESS") && nodeOutput.contains("Decision reached")) {
                         foundList[count] = true;
                         break;
                     }
@@ -144,7 +166,7 @@ public class LeaderCrashAppendTest {
                 }
                 Thread.sleep(200); // small delay
             }
-            assertTrue(foundList[0] && foundList[2] && foundList[3], "Blockchain should contain the appended string 'leadercrash'");
+            assertTrue(foundList[0] && foundList[2] && foundList[3], "Blockchain reached consensus and successfully did the transfer");
 
 
         } finally {
@@ -152,7 +174,9 @@ public class LeaderCrashAppendTest {
             for (Process node : nodes) {
                 node.destroyForcibly();
             }
-            if (client != null) client.destroyForcibly();
+            for (Process client : clients) {
+                client.destroyForcibly();
+            }
         }
     }
 

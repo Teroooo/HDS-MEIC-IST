@@ -45,6 +45,7 @@ import pt.depchain.hotstuff.Blockchain;
 import pt.depchain.hotstuff.HotStuffConsensus;
 import pt.depchain.hotstuff.HotStuffMessage;
 import org.hyperledger.besu.datatypes.Address;
+import pt.depchain.hotstuff.AccountOperations.ExecutionResult;
 
 public class Node {
     
@@ -178,26 +179,41 @@ public class Node {
                 BigInteger requiredAmount = BigInteger.valueOf(txReq.getGasPrice()).multiply(BigInteger.valueOf(txReq.getGasLimit()));
                 
                 
-                if (balance.compareTo(requiredAmount) < 0) {
-                    
+                if (balance.compareTo(requiredAmount) < 0) {   
                     System.out.println("[NODE] Transaction " + txKey + " failed during execution due to insufficient balance.");
                     link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
-                        "Transaction " + txKey + " FAILURE before execution (insufficient balance) + blockchain balance: " + balance);
+                        "Transaction " + txKey + " FAILURE before execution INSUFFICIENT_BALANCE "  + balance.toString(16));
                     continue;
                 }
-                
+
+                int leaderId = consensus.getLeader(view);
+                Address nodeAddress = addressBook.get("node" + leaderId);
                 if (!txReq.getType().equals("DEP")) {
-                    int leaderId = consensus.getLeader(view);
-                    Address nodeAddress = addressBook.get("node" + leaderId);
-                    blockchain.callSmartContractOperation(senderAddress, txReq.getData(), nodeAddress, txReq.getGasPrice(), txReq.getGasLimit());
+                    ExecutionResult result = blockchain.callSmartContractOperation(senderAddress, txReq.getData(), nodeAddress, txReq.getGasPrice(), txReq.getGasLimit());
+                    String status = result.success ? "SUCCESS" : "FAILURE";
+                    String output = result.returnData != null ? result.returnData.toHexString() : "";
+
+                    link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
+                        "Transaction " + txKey + " " + status + ": " + output);
                 }
-                
-                
-                // 3. Send specialized reply to the SPECIFIC client who sent this TX
-                link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
-                    "Transaction " + txKey + " SUCCESS in block at view " + view);
-                    
-                    // 4. Cleanup buffers for this specific transaction
+                else {
+                    String operation = new String(txReq.getData()).split("\\|")[0];
+                    if (operation.equals("TRANSFER_DEP")) {
+                        String[] parts = new String(txReq.getData()).split("\\|");
+                        long amount = Long.parseLong(parts[1]);
+                        Address recipient = Address.fromHexString(txReq.getTo());
+                        String result = blockchain.transfer_dep(senderAddress, recipient, BigInteger.valueOf(amount), nodeAddress, txReq.getGasPrice());
+
+                        link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
+                            "Transaction " + txKey + " " + result);
+                    } else if (operation.equals("BALANCE_DEP")) {
+                        String result = blockchain.balanceOf(senderAddress, Address.fromHexString(txReq.getTo()), nodeAddress, txReq.getGasPrice());
+                        link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
+                            "Transaction " + txKey + " "+ result);
+                    }
+                }
+                  
+                // 4. Cleanup buffers for this specific transaction
             }
             
             blockchain.executeCommittedBranch(decidedNode);
@@ -286,7 +302,7 @@ public class Node {
                     }
 
                 
-                    if (!basicValidation(tx)) {
+                    if (!basicValidation(tx) || !verifyTransactionSignature(tx)) {
                         System.out.println("[NODE] Invalid transaction detected in PREPARE for " + txKey);
                         return; 
                     }
@@ -464,14 +480,21 @@ public class Node {
         Transaction tx = gson.fromJson(payloadJson.get("transaction"), Transaction.class);      
         
 
-
         if (!basicValidation(tx)) {
             System.out.println("[NODE] Invalid transaction rejected at ingress");
 
             String txKey = clientId + "-" + messageId;
             // Reply to client with FAILURE
             blockchain.setNonce(Address.fromHexString(tx.getFrom()), messageId);
-            link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY, "Transaction " + txKey + " FAILURE (basic validation)");
+            link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY, "Transaction " + txKey + " FAILURE VALIDATION_ERROR");
+            return;
+        }
+
+        if (!verifyTransactionSignature(tx)) {
+            System.out.println("[NODE] Invalid transaction rejected at ingress");
+
+            String txKey = clientId + "-" + messageId;
+            link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY, "Transaction " + txKey + " FAILURE VALIDATION_ERROR");
             return;
         }
 
@@ -480,7 +503,7 @@ public class Node {
 
             String txKey = clientId + "-" + messageId;
             // Reply to client with FAILURE
-            link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY, "Transaction " + txKey + " FAILURE (basic validation)");
+            link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY, "Transaction " + txKey + " FAILURE VALIDATION_ERROR");
             return;
         }
         blockchain.setNonce(Address.fromHexString(tx.getFrom()), messageId);
@@ -611,31 +634,6 @@ public class Node {
         if (tx.getData() == null) return false;
         
         if (tx.getSignature() == null) return false;
-        try {
-            Transaction txCopy = new Transaction(
-                tx.getType(),
-                tx.getFrom(),
-                tx.getTo(),
-                tx.getData(),
-                tx.getGasPrice(),
-                tx.getGasLimit(),
-                tx.getNonce(),
-                null
-            );
-            String txString = gson.toJson(txCopy);
-            byte[] data = txString.getBytes();
-            Address senderAddress = Address.fromHexString(tx.getFrom());
-            String clientId = getClientIdFromAddress(senderAddress);
-            boolean valid = crypto.verify(data, tx.getSignature(), "CLIENT-" + clientId);
-            if (!valid) {
-                System.out.println("[NODE] Signature verification failed for transaction from " + clientId);
-                return false;
-            }
-            
-        } catch (Exception e) {
-            System.out.println("[NODE] Exception during signature verification: " + e.getMessage());
-            return false;
-        }
         
         if (tx.getType().equals("DEP")) {
             System.out.println("[NODE] Validating 1");
@@ -788,6 +786,40 @@ public class Node {
             }
         }
         return null;
+    }
+
+
+    private static boolean verifyTransactionSignature(Transaction tx) {
+        try {
+            Transaction txCopy = new Transaction(
+                tx.getType(),
+                tx.getFrom(),
+                tx.getTo(),
+                tx.getData(),
+                tx.getGasPrice(),
+                tx.getGasLimit(),
+                tx.getNonce(),
+                null
+            );
+
+            String txString = gson.toJson(txCopy);
+            byte[] data = txString.getBytes();
+
+            Address senderAddress = Address.fromHexString(tx.getFrom());
+            String clientId = getClientIdFromAddress(senderAddress);
+
+            boolean valid = crypto.verify(data, tx.getSignature(), "CLIENT-" + clientId);
+
+            if (!valid) {
+                System.out.println("[NODE] Signature verification failed for transaction from " + clientId);
+            }
+
+            return valid;
+
+        } catch (Exception e) {
+            System.out.println("[NODE] Exception during signature verification: " + e.getMessage());
+            return false;
+        }
     }
 
 }

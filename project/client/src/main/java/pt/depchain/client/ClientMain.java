@@ -23,8 +23,11 @@ import org.hyperledger.besu.datatypes.Address;
 
 public class ClientMain {
     private static volatile int receivedMessages = 0;
-    private static final Map<Integer, Map<String, Integer>> responseCounts = new HashMap<>();
+    //private static final Map<Integer, Map<String, Integer>> returnDataCounts = new HashMap<>();
     private static final Map<Integer, Boolean> completed = new HashMap<>();
+    private static final Map<Integer, String> messageOperations = new HashMap<>();
+    private static final Map<Integer, Map<String, Integer>> returnDataCounts = new HashMap<>();
+    private static final Map<Integer, String> returnDataMap = new HashMap<>();
 
     public static final String IST_CONTRACT_ADDRESS = "0x1234567891234567891234567891234567891234"; // TEMPORARY: for now we just use a placeholder address for the IST contract, but this should be changed to a proper address derived from the contract's public key or something similar
     
@@ -60,27 +63,43 @@ public class ClientMain {
                     Message msg = link.receive();
                     String payload = msg.getPayload();
                     String[] parts = payload.split(" ");
+
                     if (parts.length < 3) continue;
+
+                    // Transaction <txKey> ...
                     String requestKey = parts[1];
-                    String status = parts[2];
+
+                    // Extract messageId
                     String[] keyParts = requestKey.split("-");
                     if (keyParts.length < 2) continue;
 
                     int messageIdFromReply = Integer.parseInt(keyParts[1]);
 
+                    // STATUS is ALWAYS the third token
+                    String status = parts[2];
 
-                    synchronized (responseCounts) {
-                        Map<String, Integer> counts = responseCounts.computeIfAbsent(messageIdFromReply, k -> new HashMap<>());
+                    // OPTIONAL return data (everything after status)
+                    String returnData = "";
+                    if (parts.length > 3) {
+                        returnData = payload.substring(payload.indexOf(status) + status.length()).trim();
+                    }
+                    
+                    String compositeKey = status + "|" + returnData;
 
-                        counts.put(status, counts.getOrDefault(status, 0) + 1);
+                    synchronized (returnDataCounts) {
+                        Map<String, Integer> counts = returnDataCounts.computeIfAbsent(messageIdFromReply, k -> new HashMap<>());
 
-                        int count = counts.get(status);
+                        counts.put(compositeKey, counts.getOrDefault(compositeKey, 0) + 1);
 
-                        System.out.println("Received for msgId " + messageIdFromReply + ": " + status + " (" + count + ")");
+                        int count = counts.get(compositeKey);
+
+                        //System.out.println("Received for msgId " + messageIdFromReply + ": " + status + " (" + count + ")");
 
                         if (count == (f + 1)) {
+                            System.out.println("\nQUORUM REACHED for msgId " + messageIdFromReply);
+                            returnDataMap.put(messageIdFromReply, compositeKey);
                             completed.put(messageIdFromReply, true);
-                            responseCounts.notifyAll(); // wake up sender
+                            returnDataCounts.notifyAll();
                         }
                     } 
                 }
@@ -139,12 +158,12 @@ public class ClientMain {
                         messageId,
                         null
                     );
-
+                    
                     String txString = gson.toJson(tx);
                     byte[] txBytes = txString.getBytes();
                     
                     byte[] signature = crypto.sign(txBytes);
-
+                    
                     Transaction signedTx = new Transaction(
                         tx.getType(),
                         tx.getFrom(),
@@ -155,16 +174,22 @@ public class ClientMain {
                         tx.getNonce(),
                         signature
                     );
-
+                    
                     send(signedTx, messageId, gson, link, crypto, clientId);
-                                        
+                    
+                    messageOperations.put(messageId, "TRANSFER_DEP");
                     System.out.println("\nTransfer request  of " + amount + " DEPCOINS sent to " + to + " .");                    
                     
-                    synchronized (responseCounts) {
+                    synchronized (returnDataCounts) {
                         while (!completed.getOrDefault(messageId, false)) {
-                                responseCounts.wait();
+                                returnDataCounts.wait();
                             }
                     }
+
+                    String response = returnDataMap.get(messageId);
+                    String operation = messageOperations.get(messageId);
+
+                    decodeDepResponse(operation, response);
                     break;
                     
                 }
@@ -216,14 +241,18 @@ public class ClientMain {
 
                     send(signedTx, messageId, gson, link, crypto, clientId);
                     
+                    messageOperations.put(messageId, "TRANSFER_IST");
                     System.out.println("\nTransfer request  of " + amount + " ISTCOINS sent to " + to + " .");      
 
-                    synchronized (responseCounts) {
+                    synchronized (returnDataCounts) {
                         while (!completed.getOrDefault(messageId, false)) {
-                                responseCounts.wait();
+                                returnDataCounts.wait();
                             }
                     }
-                    
+                    String response = returnDataMap.get(messageId);
+                    String operation = messageOperations.get(messageId);
+
+                    decodeISTResponse(operation, response);
                     break;
                 }
                 
@@ -249,7 +278,7 @@ public class ClientMain {
                     Address addFromArg = Address.fromHexString(normalizeAddressHex(from));
                     Address addTo = Address.fromHexString(normalizeAddressHex(to));
 
-                    String dataStr = transfer + padAddress(addFromArg) + padAddress(addTo) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
+                    String dataStr = transferFrom + padAddress(addFromArg) + padAddress(addTo) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
                     Transaction tx = new Transaction(
                         "IST",
                         addFrom.toHexString(),
@@ -278,12 +307,19 @@ public class ClientMain {
                     );
 
                     send(signedTx, messageId, gson, link, crypto, clientId);
+                    messageOperations.put(messageId, "TRANSFER_FROM");
 
-                    synchronized (responseCounts) {
+                    System.out.println("\nTransferFrom request: " + amount + " ISTCOINS from " + from + " to " + to + ".");
+
+                    synchronized (returnDataCounts) {
                         while (!completed.getOrDefault(messageId, false)) {
-                                responseCounts.wait();
+                                returnDataCounts.wait();
                             }
                     }
+                    String response = returnDataMap.get(messageId);
+                    String operation = messageOperations.get(messageId);
+
+                    decodeISTResponse(operation, response);
                     break;
                 }
 
@@ -333,12 +369,18 @@ public class ClientMain {
                     );
 
                     send(signedTx, messageId, gson, link, crypto, clientId);
+                    System.out.println("\nIncreaseAllowance request: " + clientId + " increases allowance for " + spender + " by " + amount + " ISTCOINS.");
 
-                    synchronized (responseCounts) {
+                    messageOperations.put(messageId, "INCREASE_ALLOWANCE");
+                    synchronized (returnDataCounts) {
                         while (!completed.getOrDefault(messageId, false)) {
-                                responseCounts.wait();
+                                returnDataCounts.wait();
                             }
                     }
+                    String response = returnDataMap.get(messageId);
+                    String operation = messageOperations.get(messageId);
+
+                    decodeISTResponse(operation, response);
                     break;
                 }
 
@@ -389,11 +431,18 @@ public class ClientMain {
 
                     send(signedTx, messageId, gson, link, crypto, clientId);
 
-                    synchronized (responseCounts) {
+                    System.out.println("\nDecreaseAllowance request: " + clientId + " increases allowance for " + spender + " by " + amount + " ISTCOINS.");
+                    messageOperations.put(messageId, "DECREASE_ALLOWANCE");
+
+                    synchronized (returnDataCounts) {
                         while (!completed.getOrDefault(messageId, false)) {
-                                responseCounts.wait();
+                                returnDataCounts.wait();
                             }
                     }
+                    String response = returnDataMap.get(messageId);
+                    String operation = messageOperations.get(messageId);
+
+                    decodeISTResponse(operation, response);
                     break;
                 }
 
@@ -445,13 +494,19 @@ public class ClientMain {
                     );
 
                     send(signedTx, messageId, gson, link, crypto, clientId);
+                    System.out.println("\nAllowance query: owner=" + owner + ", spender=" + spender + ".");
 
-                    synchronized (responseCounts) {
+                    messageOperations.put(messageId, "ALLOWANCE");
+
+                    synchronized (returnDataCounts) {
                         while (!completed.getOrDefault(messageId, false)) {
-                                responseCounts.wait();
+                                returnDataCounts.wait();
                             }
                     }
+                    String response = returnDataMap.get(messageId);
+                    String operation = messageOperations.get(messageId);
 
+                    decodeISTResponse(operation, response);
                     break;
                 }
 
@@ -470,6 +525,8 @@ public class ClientMain {
                     messageId++;
                     Address add = Address.fromHexString(normalizeAddressHex(account));
                     String dataStr = "BALANCE_DEP";
+                    
+
                     //TODO TRATAMENTO DE FROM E TO
                     Transaction tx = new Transaction(
                         "DEP",
@@ -499,12 +556,19 @@ public class ClientMain {
                     );
 
                     send(signedTx, messageId, gson, link, crypto, clientId);
+                    System.out.println("\nBalance_DEP request for " + account + ".");
 
-                    synchronized (responseCounts) {
+                    messageOperations.put(messageId, "BALANCE_DEP");
+                    synchronized (returnDataCounts) {
                         while (!completed.getOrDefault(messageId, false)) {
-                                responseCounts.wait();
+                                returnDataCounts.wait();
                             }
                     }
+
+                    String response = returnDataMap.get(messageId);
+                    String operation = messageOperations.get(messageId);
+
+                    decodeDepResponse(operation, response);
                     break;
                 }
 
@@ -548,12 +612,17 @@ public class ClientMain {
                     );
 
                     send(signedTx, messageId, gson, link, crypto, clientId);
-
-                    synchronized (responseCounts) {
+                    System.out.println("\nBalanceOf request for " + clientId + ".");
+                    messageOperations.put(messageId, "BALANCE_IST");
+                    synchronized (returnDataCounts) {
                         while (!completed.getOrDefault(messageId, false)) {
-                                responseCounts.wait();
+                                returnDataCounts.wait();
                             }
                     }
+                    String response = returnDataMap.get(messageId);
+                    String operation = messageOperations.get(messageId);
+
+                    decodeISTResponse(operation, response);
                     break;
                 }
 
@@ -580,9 +649,9 @@ public class ClientMain {
                     
                     System.out.println("\nAppend request sent. Waiting for responses...");
                     
-                    synchronized (responseCounts) {
+                    synchronized (returnDataCounts) {
                         while (!completed.getOrDefault(messageId, false)) {
-                                responseCounts.wait();
+                                returnDataCounts.wait();
                             }
                     }
                     break;
@@ -705,5 +774,185 @@ public class ClientMain {
         }
 
         throw new IllegalArgumentException("Invalid address key length derived from file: " + hex);
+    }
+
+    private static void decodeDepResponse(String operation, String response) {
+        if (response == null) {
+            System.out.println("No response received.");
+            return;
+        }
+
+        String[] parts = response.split("\\|", 2);
+        String status = parts[0];
+        String data = parts.length > 1 ? parts[1] : "";
+
+        if (status.equals("FAILURE")) {
+            if (data.contains("VALIDATION_ERROR")) {
+                System.out.println("Transaction rejected: VALIDATION ERROR");
+                return;
+            }
+
+            if (data.contains("before execution")) {
+                if (data.contains("INSUFFICIENT_BALANCE")) {
+                    String[] tokens = data.split(" ");
+                    String hexBalance = tokens[tokens.length - 1];
+
+                    try {
+                        BigInteger balance = new BigInteger(hexBalance, 16);
+                        System.out.println("Transaction failed: INSUFFICIENT BALANCE");
+                        System.out.println("Current balance: " + balance);
+                    } catch (Exception e) {
+                        System.out.println("Transaction failed before execution: " + data);
+                    }
+
+                    return;
+                }
+
+                System.out.println("Transaction failed before execution: " + data);
+                return;
+            }
+        }
+
+        switch (operation) {
+
+            case "BALANCE_DEP":
+                handleBalanceDep(status, data);
+                break;
+
+            case "TRANSFER_DEP":
+                handleTransferDep(status);
+                break;
+
+            default:
+                System.out.println("Unknown DEP operation: " + operation);
+        }
+    }
+
+    private static void handleBalanceDep(String status, String data) {
+        if (status.equals("SUCCESS")) {
+            try {
+                BigInteger balance = new BigInteger(data);
+                System.out.println("Balance: " + balance + " DEPCOINS");
+            } catch (Exception e) {
+                System.out.println("Error decoding balance: " + data);
+            }
+        } else {
+            System.out.println("Did not find balance " + status);
+        }
+    }
+
+    private static void handleTransferDep(String status) {
+        if (status.equals("SUCCESS")) {
+            System.out.println("Transfer completed successfully.");
+        } else {
+            System.out.println("Transfer Unsucessful: " + status);
+        }
+    }
+
+    private static void decodeISTResponse(String operation, String response) {
+        if (response == null) {
+            System.out.println("No response received.");
+            return;
+        }
+        //System.out.println("RAW RESPONSE: [" + response + "]");
+        String[] parts = response.split("\\|", 2);
+
+        String statusRaw = parts[0].trim();   // "SUCCESS:"
+        String data = parts.length > 1 ? parts[1].trim() : "";
+
+        // remove the trailing ":" from status
+        String status = statusRaw.replace(":", "");
+
+        if (status.equals("FAILURE")) {
+
+            if (data.contains("VALIDATION_ERROR")) {
+                System.out.println("Transaction rejected: VALIDATION ERROR");
+                return;
+            }
+
+            if (data.contains("before execution")) {
+                System.out.println("Transaction failed before execution: " + data);
+                return;
+            }
+        }
+        switch (operation) {
+
+            case "BALANCE_IST":
+                handleBalanceIST(status, data);
+                break;
+
+            case "TRANSFER_IST":
+                handleBoolResult(status, data, "Transfer");
+                break;
+
+            case "TRANSFER_FROM":
+                handleBoolResult(status, data, "TransferFrom");
+                break;
+
+            case "INCREASE_ALLOWANCE":
+                handleBoolResult(status, data, "Increase Allowance");
+                break;
+
+            case "DECREASE_ALLOWANCE":
+                handleBoolResult(status, data, "Decrease Allowance");
+                break;
+
+            case "ALLOWANCE":
+                handleAllowance(status, data);
+                break;
+
+            default:
+                System.out.println("Unknown IST operation: " + operation);
+        }    
+    }
+
+    private static boolean decodeBool(String hex) {
+        if (hex == null || hex.isEmpty()) return false;
+
+        hex = hex.replace("0x", "");
+
+        return hex.endsWith("1");
+    }
+
+    private static void handleBalanceIST(String status, String data) {
+        if (status.equals("SUCCESS")) {
+            BigInteger balance = decodeUint256(data);
+            System.out.println("IST Balance: " + balance);
+        } else {
+            System.out.println("Failed to get IST balance.");
+        }
+    }
+
+    private static void handleAllowance(String status, String data) {
+        if (status.equals("SUCCESS")) {
+            BigInteger allowance = decodeUint256(data);
+            System.out.println("Allowance: " + allowance);
+        } else {
+            System.out.println("Failed to get allowance.");
+        }
+    }
+
+    private static void handleBoolResult(String status, String data, String opName) {
+        if (status.equals("SUCCESS")) {
+            boolean result = decodeBool(data);
+
+            if (result) {
+                System.out.println(opName + " successful.");
+            } else {
+                System.out.println(opName + " returned false.");
+            }
+        } else {
+            System.out.println(opName + " failed.");
+        }
+    }
+
+    private static BigInteger decodeUint256(String hex) {
+        if (hex == null || hex.isEmpty()) return BigInteger.ZERO;
+
+        hex = hex.replace("0x", "").replace("|", "").trim();
+
+        if (hex.isEmpty()) return BigInteger.ZERO;
+
+        return new BigInteger(hex, 16);
     }
 }

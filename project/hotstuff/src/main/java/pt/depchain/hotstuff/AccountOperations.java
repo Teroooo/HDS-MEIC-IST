@@ -90,64 +90,6 @@ public class AccountOperations {
         }
     }
 
-    public void main(String[] args) {
-
-        // // === Step 1: Create EOAs ===
-        // Address client1Addr = Address.fromHexString("1111111111111111111111111111111111111111");
-        // Address client2Addr = Address.fromHexString("2222222222222222222222222222222222222222");
-        // Address client3Addr = Address.fromHexString("3333333333333333333333333333333333333333");
-
-
-        // createAccount(client1Addr, BigInteger.valueOf(10000000));
-        // createAccount(client2Addr, BigInteger.valueOf(10000000));
-        // createAccount(client3Addr, BigInteger.valueOf(10000000));
-        // contractAddress = Address.fromHexString("1234567891234567891234567891234567891234");
-        // simpleWorld.createAccount(contractAddress, 0, Wei.ZERO);
-
-        // // === Step 2: Deploy contract (constructor runs here) ===
-        // deployContract(client1Addr, contractAddress); // deployer = client1, owner = treasury
-
-        // MutableAccount account = (MutableAccount) simpleWorld.get(contractAddress);
-        // System.out.println(account.getCode().size());
-
-        // // After deploy
-        // System.out.println("After deploy:");
-        // System.out.println("Contract address: " + genericCall(contractAddress, balanceOf + padAddress(contractAddress), false, client3Addr));
-        // System.out.println("Client1: " + genericCall(contractAddress, balanceOf + padAddress(client1Addr), false, client3Addr));
-        // System.out.println("Client2: " + genericCall(contractAddress, balanceOf + padAddress(client2Addr), false, client3Addr));
-        // System.out.println("Client3: " + genericCall(contractAddress, balanceOf + padAddress(client3Addr), false, client3Addr));
-
-        // //String data = balanceOf + padAddress(client1Addr);
-
-        // // // // Distribute
-        // // transfer(contractAddress, client1Addr, BigInteger.valueOf(1000));
-        // // transfer(contractAddress, client2Addr, BigInteger.valueOf(1000));
-
-        // // // // Distribute
-        // String data = transfer + padAddress(client1Addr) + convertIntegerToHex256Bit(BigInteger.valueOf(1000).intValue());
-        // System.out.println("Data for transfer: " + data);
-        // genericCall(contractAddress, data, true, client3Addr);
-        // data = transfer + padAddress(client2Addr) + convertIntegerToHex256Bit(BigInteger.valueOf(1000).intValue());
-        // genericCall(contractAddress, data, true, client3Addr);
-
-
-        // //After distribution
-        // System.out.println("After distribution:");
-        // System.out.println("Contract address: " + genericCall(contractAddress, balanceOf + padAddress(contractAddress), false, client3Addr));
-        // System.out.println("Client1: " + genericCall(contractAddress, balanceOf + padAddress(client1Addr), false, client3Addr));
-        // System.out.println("Client2: " + genericCall(contractAddress, balanceOf + padAddress(client2Addr), false, client3Addr));
-        // System.out.println("Client3: " + genericCall(contractAddress, balanceOf + padAddress(client3Addr), false, client3Addr));
-
-        // // === Step 4: Transfer tokens ===
-        // System.out.println("\nTransferring 100 tokens from client1 to client2...\n");
-
-        // transfer(contractAddress, client2Addr, BigInteger.valueOf(100));
-
-        // // === Step 5: Check balances again ===
-        // System.out.println("After transfer:");
-        // System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
-        // System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
-    }
 
     public void createAccount(Address accountAddress, BigInteger initialBalance) {
         MutableAccount account = (MutableAccount) simpleWorld.getAccount(accountAddress);
@@ -345,7 +287,7 @@ public class AccountOperations {
         throw new RuntimeException("No gas info found in trace");
     }
 
-    public String balanceOf(Address senderAddress, Address targetAddress, boolean leader, Address nodeAddress, long gasPrice) {
+    public String balanceOf(Address senderAddress, Address targetAddress, Address nodeAddress, long gasPrice) {
 
         WorldUpdater updater = simpleWorld.updater();
 
@@ -361,7 +303,7 @@ public class AccountOperations {
         Wei senderBalance = senderAccount.getBalance();
 
         if (senderBalance.compareTo(cost) < 0) {
-            return "ERROR:Insufficient balance to pay read fee";
+            return "Failure: Insufficient balance to pay read fee";
         }
 
         if (nodeAddress != null) {
@@ -377,9 +319,9 @@ public class AccountOperations {
             System.out.println("Leader balance: " + leaderAccount.getBalance());
         }
 
-        return "SUCCESS:" + balance.toBigInteger();
+        return "SUCCESS " + balance.toBigInteger();
     }
-    public String transfer_dep(Address senderAddress, Address recipientAddress, BigInteger amount, boolean leader, Address nodeAddress,long gasPrice) {
+    public String transfer_dep(Address senderAddress, Address recipientAddress, BigInteger amount, Address nodeAddress,long gasPrice) {
 
         WorldUpdater updater = simpleWorld.updater();
 
@@ -396,7 +338,7 @@ public class AccountOperations {
 
         // 1. Check sufficient balance
         if (senderBalance.compareTo(totalCost) < 0) {
-            return "ERROR:Insufficient balance for transfer";
+            return "Failure: Insufficient balance for transfer";
         }
 
         // 2. Apply transfer

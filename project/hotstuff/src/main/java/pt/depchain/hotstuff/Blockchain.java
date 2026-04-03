@@ -5,6 +5,8 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+
+import org.checkerframework.checker.units.qual.A;
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import java.math.BigInteger;
@@ -21,6 +23,7 @@ import pt.depchain.communication.Block;
 import pt.depchain.communication.ByteArrayHexAdapter;
 import pt.depchain.communication.State;
 import pt.depchain.communication.Transaction;
+import pt.depchain.hotstuff.AccountOperations.ExecutionResult;
 
 /**
  * Simple in-memory blockchain storage.
@@ -324,13 +327,20 @@ public class Blockchain {
     }
 
     
-
-    public void callSmartContractOperation(Address from, byte[] calldataHex, Address nodeAddress, long gasPrice, long gasLimit) {
-        accountOperations.genericCall(from, normalizeCalldataHex(calldataHex), nodeAddress, gasPrice, gasLimit);
+    public ExecutionResult callSmartContractOperation(Address from, byte[] calldataHex, Address nodeAddress, long gasPrice, long gasLimit) {
+        return accountOperations.genericCall(from, normalizeCalldataHex(calldataHex), nodeAddress, gasPrice, gasLimit);
     }
 
     public void printState() {
         accountOperations.printState();
+    }
+
+    public String balanceOf(Address senderAddress, Address targetAddress, Address nodeAddress, long gasPrice) {
+        return accountOperations.balanceOf(senderAddress, targetAddress, nodeAddress, gasPrice);
+    }
+
+    public String transfer_dep(Address senderAddress, Address recipientAddress, BigInteger amount, Address nodeAddress, long gasPrice) {
+        return accountOperations.transfer_dep(senderAddress, recipientAddress, amount, nodeAddress, gasPrice);
     }
 
 }

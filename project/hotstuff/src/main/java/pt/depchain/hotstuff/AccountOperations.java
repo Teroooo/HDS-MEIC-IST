@@ -41,8 +41,18 @@ public class AccountOperations {
     String transferFrom;
     String increaseAllowance;
     String decreaseAllowance;
+    
+    public static class ExecutionResult {
+        public boolean success;
+        public Bytes returnData;
 
+        public ExecutionResult(boolean success, Bytes returnData) {
+            this.success = success;
+            this.returnData = returnData;
+        }
+    }
     public AccountOperations() {
+
         try {
             // Option 1: Move up one level to the sibling ERC20 folder (../ERC20/...)
             Path parentErc20 = Path.of("..", "ERC20", "keccak_256.json");
@@ -260,7 +270,7 @@ public class AccountOperations {
     //reward = gasUsed * gasPrice
     //gasused = gasLimit - remainingGas (from trace) ( vaIs buscar o campo gás no return ou revert)
 
-    public int genericCall(Address senderAddress, String calldata, boolean leader, Address NodeAddress, long gasPrice, long gasLimit) {
+    public ExecutionResult genericCall(Address senderAddress, String calldata, boolean leader, Address NodeAddress, long gasPrice, long gasLimit) {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         PrintStream printStream = new PrintStream(outputStream);
 
@@ -305,7 +315,11 @@ public class AccountOperations {
         updater.commit();
 
         System.out.println();
-        return extractIntegerFromReturnData(outputStream);
+
+        boolean success = extractSuccess(outputStream);
+        Bytes returnData = extractReturnData(outputStream);
+
+        return new ExecutionResult(success, returnData);
     }
 
     public static long extractRemainingGas(ByteArrayOutputStream outputStream) {
@@ -483,5 +497,67 @@ public class AccountOperations {
         account.setNonce(currentNonce + 1);
 
         updater.commit();
+    }
+
+    public BigInteger getBalance(Address address) {
+        MutableAccount account = simpleWorld.getAccount(address);
+
+        if (account == null) {
+            return BigInteger.ZERO; // account not initialized
+        }
+
+        return account.getBalance().toBigInteger();
+    }
+
+    public static boolean extractSuccess(ByteArrayOutputStream outputStream) {
+        String[] lines = outputStream.toString().split("\\r?\\n");
+
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) continue;
+
+            JsonObject obj = JsonParser.parseString(line).getAsJsonObject();
+
+            if (obj.has("opName")) {
+                String op = obj.get("opName").getAsString();
+
+                if (op.equals("RETURN")) {
+                    return true;
+                }
+                if (op.equals("REVERT") || op.equals("INVALID")) {
+                    return false;
+                }
+            }
+        }
+
+        return false; // fallback if nothing found
+    }
+
+    public static Bytes extractReturnData(ByteArrayOutputStream outputStream) {
+        String[] lines = outputStream.toString().split("\\r?\\n");
+
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) continue;
+
+            JsonObject obj = JsonParser.parseString(line).getAsJsonObject();
+
+            if (obj.has("opName") && obj.get("opName").getAsString().equals("RETURN")) {
+                String memory = obj.get("memory").getAsString();
+                JsonArray stack = obj.getAsJsonArray("stack");
+
+                int offset = Integer.decode(stack.get(stack.size() - 1).getAsString());
+                int size = Integer.decode(stack.get(stack.size() - 2).getAsString());
+
+                String hex = memory.substring(
+                    2 + offset * 2,
+                    2 + offset * 2 + size * 2
+                );
+
+                return Bytes.fromHexString(hex);
+            }
+        }
+
+        return Bytes.EMPTY;
     }
 }

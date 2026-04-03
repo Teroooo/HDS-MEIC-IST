@@ -6,6 +6,8 @@ import java.io.FileWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import org.hyperledger.besu.datatypes.Address;
+import org.hyperledger.besu.evm.account.MutableAccount;
+import java.math.BigInteger;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -307,4 +309,10 @@ public class Blockchain {
     public void incrementNonce(Address address) {
         accountOperations.incrementNonce(address);
     }
+
+    public BigInteger getBalance(Address address) {
+        return accountOperations.getBalance(address);
+    }
+
+    
 }

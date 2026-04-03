@@ -25,6 +25,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.math.BigInteger;
 
 import javax.crypto.SecretKey;
 
@@ -168,17 +169,26 @@ public class Node {
 
                 String txKey = clientId + "-" + nonce;
 
+                Message completedMsg = activeRequestsBuffer.remove(txKey);
+                if (completedMsg != null) {
+                    pendingClientRequests.put(txKey, RequestState.COMPLETED);
+                }
+                // gas price * gas limit <= balance
+                BigInteger balance = blockchain.getBalance(senderAddress);
+                BigInteger requiredAmount = BigInteger.valueOf(txReq.getGasPrice()).multiply(BigInteger.valueOf(txReq.getGasLimit()));
                 
+                if (balance.compareTo(requiredAmount) < 0) {
+                    System.out.println("[NODE] Transaction " + txKey + " failed during execution due to insufficient balance.");
+                    link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
+                            "Transaction " + txKey + " FAILURE before execution (insufficient balance) + blockchain balance: " + balance);
+                    continue;
+                }
 
                 // 3. Send specialized reply to the SPECIFIC client who sent this TX
                 link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
                         "Transaction " + txKey + " SUCCESS in block at view " + view);
 
                 // 4. Cleanup buffers for this specific transaction
-                Message completedMsg = activeRequestsBuffer.remove(txKey);
-                if (completedMsg != null) {
-                    pendingClientRequests.put(txKey, RequestState.COMPLETED);
-                }
             }
 
             try {

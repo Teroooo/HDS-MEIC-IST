@@ -89,43 +89,61 @@ function Write-GenesisJson {
 
     if (-not (Test-Path $GenesisPath -PathType Leaf)) {
         Write-Error "Genesis file not found at: $GenesisPath"
-        exit 1
+        return
     }
 
     $genesis = Get-Content $GenesisPath -Raw | ConvertFrom-Json
-    $existingState = $genesis.state
+    
+    # Helper to ensure addresses are exactly 40 chars (20 bytes)
+    # This trims prefixes like '0x' and truncates longer hashes
+    filter Set-AddressFormat {
+        param([string]$addr)
+        $clean = $addr.Replace("0x", "")
+        if ($clean.Length -gt 40) {
+            return $clean.Substring(0, 40)
+        }
+        return $clean
+    }
 
     $newState = [ordered]@{}
+    $rootAddr = "1234567891234567891234567891234567891234"
+    $newState[$rootAddr] = @{ balance = "100000"; nonce = 0 }
 
-    $newState['1234567891234567891234567891234567891234'] = @{ balance = "100000"; nonce = 0 }
-
+    # Process Clients
     $clientHashes = @()
     for ($i = 1; $i -le $ClientCount; $i++) {
-        $hash = Get-PublicKeyHashHex (Join-Path $ConfigDir "client$i.pub")
+        $rawHash = Get-PublicKeyHashHex (Join-Path $ConfigDir "client$i.pub")
+        $hash = Set-AddressFormat $rawHash
         $clientHashes += $hash
         $newState[$hash] = @{ balance = "10000"; nonce = 0 }
     }
 
+    # Process Nodes/Replicas
     for ($i = 1; $i -le $ReplicaCount; $i++) {
-        $hash = Get-PublicKeyHashHex (Join-Path $ConfigDir "node$i.pub")
+        $rawHash = Get-PublicKeyHashHex (Join-Path $ConfigDir "node$i.pub")
+        $hash = Set-AddressFormat $rawHash
         $newState[$hash] = @{ balance = "0"; nonce = 0 }
     }
 
     $genesis.state = $newState
 
+    # Update Transactions
     if ($genesis.transactions -and $genesis.transactions.Count -ge 1) {
-        $genesis.transactions[0].from = '1234567891234567891234567891234567891234'
+        $genesis.transactions[0].from = $rootAddr
     }
 
     if ($genesis.transactions -and $genesis.transactions.Count -ge 2 -and $clientHashes.Count -ge 1) {
         $client1Addr = $clientHashes[0]
-        $genesis.transactions[1].from = '1234567891234567891234567891234567891234'
+        $genesis.transactions[1].from = $rootAddr
         $genesis.transactions[1].to = $client1Addr
+        
+        # Ensure the data field uses the 40-char version for the ABI encoding
         $genesis.transactions[1].data = '0xa9059cbb' + (Pad-Address $client1Addr) + (Convert-IntegerToHex256Bit 1000)
     }
 
+    # Save with specific depth to prevent truncation of nested objects
     $genesis | ConvertTo-Json -Depth 32 | Set-Content -Path $GenesisPath
-    Write-Host "genesis.json regenerated with public-key hash addresses."
+    Write-Host "genesis.json regenerated. All addresses forced to 40 characters."
 }
 
 Write-Host "Checking RSA keys..."

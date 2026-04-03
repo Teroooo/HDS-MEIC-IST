@@ -9,6 +9,6 @@ public class BadHashLeaderTest extends ByzantineTestBase {
     @DisplayName("5 - Hash errada: líder bizantino propõe bloco com hash/comando corrompido (f=1 tolerado, view change)")
     void testBadHashLeader() throws Exception {
         Map<Integer, String> byzantine = Map.of(1, "bad-hash");
-        runByzantineScenario(byzantine, "test_bad_hash_leader_abc123", true);
+        runByzantineScenario(byzantine, "test_bad_hash_leader_abc123", true, 1);
     }
 }

@@ -35,20 +35,30 @@ public abstract class ByzantineTestBase {
     }
 
     /** Kill any leftover processes occupying the node/client UDP ports. */
-    private void freeAllPorts() {
+    private void freeAllPorts(int numClients) {
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        StringBuilder nodeClientPorts = new StringBuilder();
+        nodeClientPorts.append("9001,9002,9003,9004");
+        for (int i = 1; i <= numClients; i++) {
+            nodeClientPorts.append(",").append(4000 + i);
+        }
+        
         if (isWindows) {
             // PowerShell one-liner: find all PIDs listening on our ports and kill them
             try {
                 Process p = new ProcessBuilder("powershell", "-NoProfile", "-Command",
-                    "Get-NetUDPEndpoint -LocalPort 9001,9002,9003,9004,4001,4002 -ErrorAction SilentlyContinue" +
+                    "Get-NetUDPEndpoint -LocalPort " + nodeClientPorts + " -ErrorAction SilentlyContinue" +
                     " | Select-Object -ExpandProperty OwningProcess -Unique" +
                     " | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }")
                     .redirectErrorStream(true).start();
                 p.waitFor(10, TimeUnit.SECONDS);
             } catch (Exception ignored) {}
         } else {
-            int[] ports = {9001, 9002, 9003, 9004, 4001, 4002};
+            List<Integer> ports = new ArrayList<>();
+            ports.addAll(Arrays.asList(9001, 9002, 9003, 9004));
+            for (int i = 1; i <= numClients; i++) {
+                ports.add(4000 + i);
+            }
             for (int port : ports) {
                 try {
                     new ProcessBuilder("fuser", "-k", port + "/udp")
@@ -61,13 +71,15 @@ public abstract class ByzantineTestBase {
 
     protected void runByzantineScenario(Map<Integer, String> byzantineNodes,
                                         String testString,
-                                        boolean expectConsensus) throws Exception {
+                                        boolean expectConsensus,
+                                        int numClients) throws Exception {
         // Kill any leftover processes from a previous test
-        freeAllPorts();
+        freeAllPorts(numClients);
 
         List<Process> nodes = new ArrayList<>();
         List<StringBuilder> nodeOutputs = new ArrayList<>();
-        Process client = null;
+        List<Process> clients = new ArrayList<>();
+        List<BufferedWriter> clientWriters = new ArrayList<>();
 
         try {
             for (int i = 1; i <= 4; i++) {
@@ -75,7 +87,7 @@ public abstract class ByzantineTestBase {
                 if (byzantineNodes.containsKey(i)) {
                     String attack = byzantineNodes.get(i);
                     pb = new ProcessBuilder(
-                        "mvn", "exec:java",
+                        "cmd", "/c", "mvn", "exec:java",
                         "-Dexec.mainClass=pt.depchain.service.ByzantineNode",
                         "-Dexec.args=" + i +
                         " ../config/node" + i + ".priv" +
@@ -84,7 +96,7 @@ public abstract class ByzantineTestBase {
                     );
                 } else {
                     pb = new ProcessBuilder(
-                        "mvn", "exec:java",
+                        "cmd", "/c", "mvn", "exec:java",
                         "-Dexec.mainClass=pt.depchain.service.Node",
                         "-Dexec.args=" + i +
                         " ../config/node" + i + ".priv" +
@@ -126,36 +138,52 @@ public abstract class ByzantineTestBase {
                 return;
             }
 
-            ProcessBuilder pbClient = new ProcessBuilder(
-                "mvn", "exec:java",
-                "-Dexec.mainClass=pt.depchain.client.ClientMain",
-                "-Dexec.args=client1" +
-                " ../config/client1.priv" +
-                " ../config/client1.pub"
-            );
-            pbClient.redirectErrorStream(true);
-            client = pbClient.start();
+            // Spawn multiple clients
+            for (int i = 1; i <= numClients; i++) {
+                ProcessBuilder pbClient = new ProcessBuilder(
+                    "cmd", "/c", "mvn", "exec:java",
+                    "-Dexec.mainClass=pt.depchain.client.ClientMain",
+                    "-Dexec.args=client" + i +
+                    " ../config/client" + i + ".priv" +
+                    " ../config/client" + i + ".pub"
+                );
+                pbClient.redirectErrorStream(true);
+                Process clientProcess = pbClient.start();
+                clients.add(clientProcess);
 
-            final Process cp = client;
-            StringBuilder clientOutput = new StringBuilder();
-            new Thread(() -> {
-                try (BufferedReader r = new BufferedReader(new InputStreamReader(cp.getInputStream()))) {
-                    String line;
-                    while ((line = r.readLine()) != null) {
-                        synchronized (clientOutput) { clientOutput.append(line).append("\n"); }
-                        System.out.println("[CLIENT] " + line);
-                    }
-                } catch (IOException ignored) {}
-            }, "reader-client").start();
+                final int clientId = i;
+                final Process cp = clientProcess;
+                new Thread(() -> {
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(cp.getInputStream()))) {
+                        String line;
+                        while ((line = r.readLine()) != null) {
+                            System.out.println("[CLIENT-" + clientId + "] " + line);
+                        }
+                    } catch (IOException ignored) {}
+                }, "reader-client-" + i).start();
+            }
 
             Thread.sleep(CLIENT_STARTUP_MS);
 
-            BufferedWriter clientWriter = new BufferedWriter(new OutputStreamWriter(client.getOutputStream()));
-            clientWriter.write("1\n");
-            clientWriter.flush();
-            Thread.sleep(300);
-            clientWriter.write(testString + "\n");
-            clientWriter.flush();
+            // Only client1 performs the transfer IST operation
+            BufferedWriter client1Writer = new BufferedWriter(new OutputStreamWriter(clients.get(0).getOutputStream()));
+            clientWriters.add(client1Writer);
+
+            //client 2: Transfer From 
+            client1Writer.write("2\n"); // select transfer DEP
+            client1Writer.flush();
+            Thread.sleep(200); // small delay
+            client1Writer.write("client2\n"); // to
+            client1Writer.flush();
+            Thread.sleep(200); // small delay
+            client1Writer.write("100\n"); // amount
+            client1Writer.flush();
+            Thread.sleep(200); // small delay
+            client1Writer.write("1\n"); // gas price
+            client1Writer.flush();
+            Thread.sleep(200); // small delay
+            client1Writer.write("100000\n"); // gas limit
+            client1Writer.flush();
 
             long deadline = System.currentTimeMillis() + CONSENSUS_TIMEOUT_MS;
             boolean found = false;
@@ -165,7 +193,7 @@ public abstract class ByzantineTestBase {
                     if (byzantineNodes.containsKey(i + 1)) continue;
                     String output;
                     synchronized (nodeOutputs.get(i)) { output = nodeOutputs.get(i).toString(); }
-                    if (output.contains(testString) && output.contains("Decision reached")) {
+                    if (output.contains("Generic call result: SUCCESS") && output.contains("Decision reached")) {
                         found = true;
                         break;
                     }
@@ -193,11 +221,11 @@ public abstract class ByzantineTestBase {
             for (Process node : nodes) {
                 killProcessTree(node);
             }
-            if (client != null) {
+            for (Process client : clients) {
                 killProcessTree(client);
             }
             // Also kill by port as safety net
-            freeAllPorts();
+            freeAllPorts(numClients);
         }
     }
 

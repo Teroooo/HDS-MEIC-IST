@@ -70,7 +70,7 @@ mvn clean test -pl test -Dtest=<TestName>
 
 ### Test List:  
 
-**CorrectAppendTest** - 4 safe nodes, consensus reached.
+**CorrectAppendTest** - 4 safe nodes, 2 clients, consensus reached.
 
 **LeaderCrashAppendTest** - 4 safe nodes, leader crash happens in view 2, consensus reached.  
 
@@ -85,6 +85,10 @@ mvn clean test -pl test -Dtest=<TestName>
 **OneBadShareTest** -  3 Safe nodes, 1 Byzantine Node that signs with an invalid share, consensus reached.  
 
 **TwoBadSharesTest** - 2 Safe nodes, 2 Byzantine Node that signs with an invalid share each, consensus not reached.  
+
+**AprovalFrontrunningTest** - 1st block: client1 calls "increase allowance client2 100", 
+2nd block: client1 calls "decrease allowance client2 50", but client2 calls "transferfrom client1 client2 100" before this is executed 
+3rd block: cliente2 calls "transferfrom  client1 client2 50"
 
 
 # Unit tests: 

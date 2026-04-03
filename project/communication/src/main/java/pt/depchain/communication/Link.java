@@ -159,16 +159,17 @@ public class Link {
         msg.setPayload(payload);
         msg.setReceiver(destId);
         msg.setSignature(null);
-        if (destType == Type.CLIENT){
+        boolean noToEncrypt = (type == Message.Type.KEY_EXCHANGE || type == Message.Type.ACK || type == Message.Type.KEY_EXCHANGE_REPLY);
+        if (destType == Type.CLIENT || myType == Type.CLIENT || noToEncrypt) {
             msg.setSignature(cryptoLibrary.sign(gson.toJson(msg).getBytes()));
         }
-        
-        // Encrypt payload ONLY for NODE
-        if (destType == Type.NODE && type != Message.Type.KEY_EXCHANGE && type != Message.Type.ACK && type != Message.Type.KEY_EXCHANGE_REPLY) {
+        else{
+            // Encrypt payload ONLY for NODE
             byte[] encryptedBytes = cryptoLibrary.encryptAES(payload.getBytes(), destId);
             String encryptedPayload = Base64.getEncoder().encodeToString(encryptedBytes);
             msg.setPayload(encryptedPayload);
         }
+
 
         byte[] data = gson.toJson(msg).getBytes();
         

@@ -2,6 +2,8 @@ package pt.depchain.service;
 
 import java.util.Random;
 
+import pt.depchain.communication.Block;
+
 /**
  * Classe de Testes de Integração para simular um nó bizantino em um sistema de
  *  consenso HotStuff.
@@ -26,7 +28,8 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
         BAD_HASH,           // Proposta com hash errada (líder) + voto forjado (réplica)
         DUPLICATE_MSG,      // Réplica envia voto duplicado
         BAD_SHARE,          // Réplica assina com dados corrompidos (share inválida)
-        WRONG_SENDER        // Réplica envia voto com sender ID falsificado
+        WRONG_SENDER,        // Réplica envia voto com sender ID falsificado
+        APPROVAL_FRONTRUNNING // Líder propõe comando legítimo mas com hash forjado para frontrunning
     }
 
     private final AttackMode attackMode;
@@ -56,6 +59,9 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
                 break;
             case WRONG_SENDER:
                 break;
+            case APPROVAL_FRONTRUNNING:
+
+                break;
         }
     }
     
@@ -66,12 +72,10 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
     @Override
     protected void runPreparePhase() throws Exception {
         if (!isLeader() || prepareStarted) return;
+
         prepareStarted = true;
 
-        System.out.println("[BYZANTINE LEADER] ══════════════════════════════");
-        System.out.println("[BYZANTINE LEADER] Proposing CORRUPTED block in view " + viewNumber);
-        
-        // Find highQC
+        // Find highQC (highest QC among NEW_VIEW messages)
         QuorumCertificate highQC = null;
         for (HotStuffMessage msg : newViewMessages.values()) {
             if (msg.getQc() != null) {
@@ -81,53 +85,54 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
             }
         }
         
-        // TreeNode hashforged= new TreeNode("CORRUPTED_COMMAND", "CORRUPTED_KEY", null, viewNumber+1);
-        TreeNode parentNode;
+        // Create new proposal extending from highQC
         TreeNode parent;
         if (highQC != null) {
             parent = blockchain.getNode(highQC.getNodeHash());
         } else {
             parent = blockchain.getLastCommittedNode();
         }
-        
+        System.out.println("currentProposal: " + currentProposal);
         if (currentProposal != null) {
-            pendingCommands.removeIf(cmd -> cmd.requestKey.equals(currentProposal.getRequestKey()));
+            // Re-propose the previous proposal (crash recovery)
+            //pendingCommands.removeIf(cmd -> cmd.requestKey.equals(currentProposal.getRequestKey()));
+            pendingBlocks.removeIf(cmd -> cmd.toString().equals(currentProposal.getBlock().toString()));
+            System.out.println("[CONSENSUS] Re-proposing previous proposal: " + currentProposal);
         } else {
-            CommandRequest cmdReq = pendingCommands.poll();
-            if (cmdReq == null) {
+            // Take a new command from the pending queue
+            Block blc = pendingBlocks.poll();
+            if (blc == null) {
                 prepareStarted = false;
-                return;
-            }
-            
-            String command;
-            if (useBadStrings) {
-                command = cmdReq.command + "_CORRUPTED";
-            } else {
-                command = cmdReq.command;
+                System.out.println("[CONSENSUS] No blocks to propose, waiting...");
+                return; // nothing to propose
             }
 
             byte[] forgedHash;
             if (useBadHash) {
-                TreeNode forgedNode = new TreeNode(command, cmdReq.requestKey, null, viewNumber+1);
+                TreeNode forgedNode = new TreeNode(blc, null, viewNumber);
                 forgedHash = forgedNode.getHash();
             } else {
                 forgedHash = parent.getHash(); // hash normal baseado no conteúdo
             }
-
-            currentProposal = new TreeNode(command, cmdReq.requestKey, forgedHash, viewNumber);
+            currentProposal = new TreeNode(blc, parent.getHash(), viewNumber);
             blockchain.addNode(currentProposal);
         }
         
+        System.out.println("[CONSENSUS] Leader " + myId + " running PREPARE phase for view " + viewNumber);
+                
+        // Broadcast PREPARE message
         HotStuffMessage hsMsg = new HotStuffMessage();
         hsMsg.setProposal(currentProposal);
         hsMsg.setQc(highQC);
         
         String payload = gson.toJson(hsMsg);
         for (int nodeId = 1; nodeId <= n; nodeId++) {
-            link.send(Link.Type.NODE, String.valueOf(nodeId), Message.Type.PREPARE, payload);
+            String nodeString = Integer.toString(getLeader(nodeId));
+            link.send(Link.Type.NODE, nodeString, Message.Type.PREPARE, payload);
         }
         System.out.println("[BYZANTINE LEADER] Sent CORRUPTED PREPARE to all nodes");
         System.out.println("[BYZANTINE LEADER] ══════════════════════════════");
+    
     }
     
     // 
@@ -149,19 +154,27 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
             case WRONG_SENDER:
                 handlePrepare_WrongSender(msg);
                 break;
+            case APPROVAL_FRONTRUNNING:
+                handlePrepare_ApprovalFrontrunning(msg);
+                break;
         }
     }
 
     //  BAD_HASH: forja voto com hash diferente 
-    private void handlePrepare_BadHash(Message msg) throws Exception {
+    public void handlePrepare_BadHash(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         TreeNode proposal = hsMsg.getProposal();
         QuorumCertificate justify = hsMsg.getQc();
         
-        blockchain.addNode(proposal);
-        currentProposal = proposal;
+        //System.out.println("[CONSENSUS] Node " + myId + " received PREPARE from leader " + msg.getSenderId() + ": " + proposal);
         
+        
+        // Check if safe to accept (safeNode predicate)
         if (safeNode(proposal, justify)) {
+            
+            blockchain.addNode(proposal);
+            currentProposal = proposal;
+
             byte[] realHash = proposal.getHash();
             byte[] forgedHash = new byte[realHash.length];
             System.arraycopy(realHash, 0, forgedHash, 0, realHash.length);
@@ -169,9 +182,8 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
             
             System.out.println("[BYZANTINE REPLICA] Forging PREPARE_VOTE with wrong hash!");
             
-            SigShare voteSignature = crypto.signShare(
-                createVoteData(viewNumber, Message.Type.PREPARE_VOTE, forgedHash)
-            );
+            // Vote for this proposal
+            SigShare voteSignature = crypto.signShare(createVoteData(viewNumber, Message.Type.PREPARE_VOTE, forgedHash));
             
             HotStuffMessage voteMsg = new HotStuffMessage();
             voteMsg.setNodeHash(forgedHash);
@@ -180,22 +192,29 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
             
             String payload = gson.toJson(voteMsg);
             link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
+            
+            //System.out.println("[CONSENSUS] Node " + myId + " voted PREPARE for " + proposal);
+        } else {
+            //System.out.println("[CONSENSUS] Node " + myId + " rejected PREPARE (safeNode failed)");
         }
     }
 
     //   DUPLICATE_MSG: envia voto correto duas vezes 
-    private void handlePrepare_Duplicate(Message msg) throws Exception {
+    public void handlePrepare_Duplicate(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         TreeNode proposal = hsMsg.getProposal();
         QuorumCertificate justify = hsMsg.getQc();
         
-        blockchain.addNode(proposal);
-        currentProposal = proposal;
+        //System.out.println("[CONSENSUS] Node " + myId + " received PREPARE from leader " + msg.getSenderId() + ": " + proposal);
         
+        
+        // Check if safe to accept (safeNode predicate)
         if (safeNode(proposal, justify)) {
-            SigShare voteSignature = crypto.signShare(
-                createVoteData(viewNumber, Message.Type.PREPARE_VOTE, proposal.getHash())
-            );
+            
+            blockchain.addNode(proposal);
+            currentProposal = proposal;
+            // Vote for this proposal
+            SigShare voteSignature = crypto.signShare(createVoteData(viewNumber, Message.Type.PREPARE_VOTE, proposal.getHash()));
             
             HotStuffMessage voteMsg = new HotStuffMessage();
             voteMsg.setNodeHash(proposal.getHash());
@@ -203,57 +222,69 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
             voteMsg.setViewNumber(viewNumber);
             
             String payload = gson.toJson(voteMsg);
-
             System.out.println("[BYZANTINE REPLICA] Sending DUPLICATE PREPARE_VOTE!");
             link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
             link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
+            //System.out.println("[CONSENSUS] Node " + myId + " voted PREPARE for " + proposal);
+        } else {
+            //System.out.println("[CONSENSUS] Node " + myId + " rejected PREPARE (safeNode failed)");
         }
     }
 
     //  BAD_SHARE: assina dados corrompidos (share inválida) 
-    private void handlePrepare_BadShare(Message msg) throws Exception {
+    public void handlePrepare_BadShare(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         TreeNode proposal = hsMsg.getProposal();
         QuorumCertificate justify = hsMsg.getQc();
         
-        blockchain.addNode(proposal);
-        currentProposal = proposal;
+        //System.out.println("[CONSENSUS] Node " + myId + " received PREPARE from leader " + msg.getSenderId() + ": " + proposal);
         
+        
+        // Check if safe to accept (safeNode predicate)
         if (safeNode(proposal, justify)) {
-            // Assina dados ERRADOS mas reporta o hash correto
+            
+            blockchain.addNode(proposal);
+            currentProposal = proposal;
+
             byte[] corruptData = "CORRUPTED_RANDOM_DATA".getBytes();
             SigShare badSignature = crypto.signShare(corruptData);
-            
+
             System.out.println("[BYZANTINE REPLICA] Sending PREPARE_VOTE with BAD SHARE!");
-            
+                       
             HotStuffMessage voteMsg = new HotStuffMessage();
-            voteMsg.setNodeHash(proposal.getHash()); // hash correto
-            voteMsg.setVoteSignature(badSignature);    // mas assinatura sobre dados errados!
+            voteMsg.setNodeHash(proposal.getHash());
+            voteMsg.setVoteSignature(badSignature);
             voteMsg.setViewNumber(viewNumber);
             
             String payload = gson.toJson(voteMsg);
             link.send(Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
+            
+            //System.out.println("[CONSENSUS] Node " + myId + " voted PREPARE for " + proposal);
+        } else {
+            //System.out.println("[CONSENSUS] Node " + myId + " rejected PREPARE (safeNode failed)");
         }
     }
 
     // WRONG_SENDER: envia voto com sender ID falsificado 
-    private void handlePrepare_WrongSender(Message msg) throws Exception {
+    public void handlePrepare_WrongSender(Message msg) throws Exception {
         HotStuffMessage hsMsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
         TreeNode proposal = hsMsg.getProposal();
         QuorumCertificate justify = hsMsg.getQc();
         
-        blockchain.addNode(proposal);
-        currentProposal = proposal;
+        //System.out.println("[CONSENSUS] Node " + myId + " received PREPARE from leader " + msg.getSenderId() + ": " + proposal);
         
+        
+        // Check if safe to accept (safeNode predicate)
         if (safeNode(proposal, justify)) {
-            SigShare voteSignature = crypto.signShare(
-                createVoteData(viewNumber, Message.Type.PREPARE_VOTE, proposal.getHash())
-            );
             
-            // Escolhe um sender ID falso (outro nó qualquer)
+            blockchain.addNode(proposal);
+            currentProposal = proposal;
+            // Vote for this proposal
+            SigShare voteSignature = crypto.signShare(createVoteData(viewNumber, Message.Type.PREPARE_VOTE, proposal.getHash()));
+            
             int fakeSenderId = (myId % n) + 1;
             System.out.println("[BYZANTINE REPLICA] Sending PREPARE_VOTE with WRONG SENDER ID! Real=" + myId + " Spoofed=" + fakeSenderId);
-            
+
             HotStuffMessage voteMsg = new HotStuffMessage();
             voteMsg.setNodeHash(proposal.getHash());
             voteMsg.setVoteSignature(voteSignature);
@@ -261,6 +292,14 @@ public class ByzantineHotStuffConsensus extends HotStuffConsensus {
             
             String payload = gson.toJson(voteMsg);
             link.sendAs(String.valueOf(fakeSenderId), Link.Type.NODE, msg.getSenderId(), Message.Type.PREPARE_VOTE, payload);
+            
+            //System.out.println("[CONSENSUS] Node " + myId + " voted PREPARE for " + proposal);
+        } else {
+            //System.out.println("[CONSENSUS] Node " + myId + " rejected PREPARE (safeNode failed)");
         }
+    }
+
+    private void handlePrepare_ApprovalFrontrunning(Message msg) throws Exception {
+
     }
 }

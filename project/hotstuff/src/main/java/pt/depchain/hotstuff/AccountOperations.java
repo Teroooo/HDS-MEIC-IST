@@ -463,4 +463,25 @@ public class AccountOperations {
 
         throw new RuntimeException("No RETURN frame found in trace");
     }
+
+    public long getNonce(Address address) {
+        MutableAccount account = simpleWorld.getAccount(address);
+        
+        if (account == null) {
+            return 0; // default for new accounts
+        }
+        
+        return account.getNonce();
+    } 
+
+    public void incrementNonce(Address address) {
+        WorldUpdater updater = simpleWorld.updater();
+
+        MutableAccount account = updater.getOrCreate(address);
+
+        long currentNonce = account.getNonce();
+        account.setNonce(currentNonce + 1);
+
+        updater.commit();
+    }
 }

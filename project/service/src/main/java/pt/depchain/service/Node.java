@@ -29,6 +29,7 @@ import java.util.stream.Stream;
 import javax.crypto.SecretKey;
 
 import org.apache.tuweni.crypto.Hash;
+import org.checkerframework.checker.units.qual.A;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -245,7 +246,7 @@ public class Node {
                     System.out.println("[NODE] Received empty or invalid block in PREPARE.");
                     return;
                 }
-
+              
                 // 2. Iterate through every transaction in the block to verify it
                 for (Transaction tx : proposedBlock.getTransactions()) {
                     Address senderAddress = Address.fromHexString(tx.getFrom());
@@ -260,19 +261,7 @@ public class Node {
                         continue;
                     }
 
-                    // Check if we even have the original client message for this transaction
-                    // Message clientMsg = activeRequestsBuffer.get(txKey);
-                    
-                    // if (clientMsg == null) {
-                    //     // OPTIONAL: In a robust BFT system, if you are missing a TX, 
-                    //     // you might buffer the PREPARE or request the missing TX from the leader.
-                    //     System.out.println("[NODE] Missing client request for " + txKey + ". Buffering PREPARE.");
-                    //     bufferedPrepare.put(txKey, msg); 
-                    //     return; // Exit: we cannot vote on a block if we don't know the contents
-                    // }
-
-                    // 3. validate transaction again
-        
+                
                     if (!basicValidation(tx)) {
                         System.out.println("[NODE] Invalid transaction detected in PREPARE for " + txKey);
                         return; 
@@ -449,7 +438,7 @@ public class Node {
 
         Transaction tx = gson.fromJson(payloadJson.get("transaction"), Transaction.class);      
 
-        if (!basicValidation(tx)) {
+        if (!basicValidation(tx) || !checkNonce(tx, clientId)) {
             System.out.println("[NODE] Invalid transaction rejected at ingress");
 
             String txKey = clientId + "-" + messageId;
@@ -575,7 +564,9 @@ public class Node {
     //To do: nonces check, altering sig check based on the new addresses that will be hash(publicKey) instead of clientId
     private static boolean basicValidation(Transaction tx) {
         if (tx == null) return false;
+
         if (tx.getFrom() == null || tx.getTo() == null) return false;
+
 
         if (tx.getData() == null) return false;
 
@@ -583,6 +574,33 @@ public class Node {
         if (tx.getGasLimit() <= 0) return false;
 
         if (tx.getData() == null) return false;
+        
+        if (tx.getSignature() == null) return false;
+        try {
+            Transaction txCopy = new Transaction(
+                tx.getType(),
+                tx.getFrom(),
+                tx.getTo(),
+                tx.getData(),
+                tx.getGasPrice(),
+                tx.getGasLimit(),
+                tx.getNonce(),
+                null
+            );
+            String txString = gson.toJson(txCopy);
+            byte[] data = txString.getBytes();
+            Address senderAddress = Address.fromHexString(tx.getFrom());
+            String clientId = getClientIdFromAddress(senderAddress);
+            boolean valid = crypto.verify(data, tx.getSignature(), "CLIENT-" + clientId);
+            if (!valid) {
+                System.out.println("[NODE] Signature verification failed for transaction from " + clientId);
+                return false;
+            }
+            
+        } catch (Exception e) {
+            System.out.println("[NODE] Exception during signature verification: " + e.getMessage());
+            return false;
+        }
         
         if (tx.getType().equals("DEP")) {
             System.out.println("[NODE] Validating 1");
@@ -596,12 +614,12 @@ public class Node {
             System.out.println("[NODE] Validating 2");
             String[] parts = dataString.split("\\|");
             if (parts.length < 1) return false;
+
             String operation = parts[0];
             switch (operation) {
 
                 case "TRANSFER_DEP": {
                     if (parts.length != 2) return false;
-
                     try {
                         long amount = Long.parseLong(parts[1]);
                         if (amount <= 0) return false;
@@ -623,36 +641,15 @@ public class Node {
             }
            
         } 
-
-        if (tx.getSignature() == null) return false;
-
-            try {
-                Transaction txCopy = new Transaction(
-                    tx.getType(),
-                    tx.getFrom(),
-                    tx.getTo(),
-                    tx.getData(),
-                    tx.getGasPrice(),
-                    tx.getGasLimit(),
-                    tx.getNonce(),
-                    null
-                );
-
-                String txString = gson.toJson(txCopy);
-                byte[] data = txString.getBytes();
-
-                boolean valid = crypto.verify(data, tx.getSignature(), "CLIENT-" + tx.getFrom());
-
-                if (!valid) {
-                    System.out.println("[NODE] Signature verification failed for transaction from " + tx.getFrom());
-                    return false;
-                }
-
-            } catch (Exception e) {
-                return false;
-            }
-
         return true;
+    }
+
+    private static boolean checkNonce(Transaction tx, String clientId) {
+        Address sender = Address.fromHexString(tx.getFrom());
+        long currentNonce = blockchain.getNonce(sender);
+        System.out.println("[NODE] Checking nonce for transaction from " + clientId + ": expected " + (currentNonce + 1) + ", got " + tx.getNonce());
+
+        return tx.getNonce() == currentNonce + 1;
     }
 
     private static long estimateGasUsed(Transaction tx) {

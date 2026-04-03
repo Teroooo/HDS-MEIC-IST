@@ -295,4 +295,16 @@ public class Blockchain {
             e.printStackTrace();
         }
     }
+
+    public AccountOperations getAccountOperations() {
+        return accountOperations;
+    }
+
+    public long getNonce(Address address) {
+        return accountOperations.getNonce(address);
+    }
+
+    public void incrementNonce(Address address) {
+        accountOperations.incrementNonce(address);
+    }
 }

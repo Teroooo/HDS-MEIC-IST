@@ -26,7 +26,7 @@ public class ClientMain {
     private static final Map<Integer, Map<String, Integer>> responseCounts = new HashMap<>();
     private static final Map<Integer, Boolean> completed = new HashMap<>();
 
-    public static final String IST_CONTRACT_ADDRESS = "IST_CONTRACT"; // TEMPORARY: for now we just use a placeholder address for the IST contract, but this should be changed to a proper address derived from the contract's public key or something similar
+    public static final String IST_CONTRACT_ADDRESS = "0x1234567891234567891234567891234567891234"; // TEMPORARY: for now we just use a placeholder address for the IST contract, but this should be changed to a proper address derived from the contract's public key or something similar
     
     private static String bytecode;
     private static String allowance;
@@ -48,6 +48,7 @@ public class ClientMain {
         String publicKeyPath = args[2];
 
         int messageId = 0; 
+        int nonce = 0;
 
         CryptoLibrary crypto = new CryptoLibrary(privateKeyPath, publicKeyPath);
         Link link = new Link(clientId, Link.Type.CLIENT, "../config/membership.json", privateKeyPath, publicKeyPath, crypto);
@@ -125,7 +126,7 @@ public class ClientMain {
                     Address addFrom = Address.fromHexString(normalizeAddressHex(clientId));
                     Address addTo = Address.fromHexString(normalizeAddressHex(to));
                     //System.out.println("Recipient address: " + add);
-
+                    
                     messageId++;
                     String dataStr = "TRANSFER_DEP" + "|" + amount;
                     //TODO TRATAMENTO DE FROM E TO
@@ -136,7 +137,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        messageId,
+                        nonce + 1,
                         null
                     );
 
@@ -194,7 +195,7 @@ public class ClientMain {
                         dataStr.getBytes(), //devemos ter o keccak das functions + hash dos args
                         gasPrice,
                         gasLimit,
-                        messageId,
+                        nonce + 1,
                         null //devemos ter a assinatura da transaction, mas para já deixamos null
                     );
                     
@@ -257,7 +258,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        messageId,
+                        nonce + 1,
                         null
                     );
 
@@ -312,7 +313,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        messageId,
+                        nonce + 1,
                         null
                     );
 
@@ -367,7 +368,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        messageId,
+                        nonce + 1,
                         null
                     );
 
@@ -424,7 +425,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        messageId,
+                        nonce + 1,
                         null
                     );
 
@@ -478,7 +479,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        messageId,
+                        nonce + 1,
                         null
                     );
 
@@ -527,7 +528,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        messageId,
+                        nonce + 1,
                         null
                     );
 

@@ -49,6 +49,85 @@ function New-KeyPair {
     openssl rsa -pubout -in $PrivPath -out $PubPath 2>$null
 }
 
+$keysWereGenerated = $false
+
+function Get-PublicKeyHashHex {
+    param([string]$PubPath)
+
+    $pem = Get-Content $PubPath -Raw
+    $base64 = $pem -replace '-----BEGIN PUBLIC KEY-----', '' -replace '-----END PUBLIC KEY-----', '' -replace '\s', ''
+    $bytes = [Convert]::FromBase64String($base64)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    return (($sha256.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '')
+}
+
+function Normalize-AddressHex {
+    param([string]$Raw)
+    $hex = if ($Raw.StartsWith('0x')) { $Raw.Substring(2) } else { $Raw }
+    if ($hex.Length -eq 64) { return $hex.Substring(0, 40) }
+    return $hex
+}
+
+function Pad-Address {
+    param([string]$Raw)
+    $hex = Normalize-AddressHex $Raw
+    return ('0' * 24) + $hex
+}
+
+function Convert-IntegerToHex256Bit {
+    param([int]$Number)
+    return ('{0:x64}' -f $Number)
+}
+
+function Write-GenesisJson {
+    param(
+        [string]$GenesisPath,
+        [string]$ConfigDir,
+        [int]$ReplicaCount,
+        [int]$ClientCount
+    )
+
+    if (-not (Test-Path $GenesisPath -PathType Leaf)) {
+        Write-Error "Genesis file not found at: $GenesisPath"
+        exit 1
+    }
+
+    $genesis = Get-Content $GenesisPath -Raw | ConvertFrom-Json
+    $existingState = $genesis.state
+
+    $newState = [ordered]@{}
+
+    $newState['1234567891234567891234567891234567891234'] = @{ balance = "100000"; nonce = 0 }
+
+    $clientHashes = @()
+    for ($i = 1; $i -le $ClientCount; $i++) {
+        $hash = Get-PublicKeyHashHex (Join-Path $ConfigDir "client$i.pub")
+        $clientHashes += $hash
+        $newState[$hash] = @{ balance = "10000"; nonce = 0 }
+    }
+
+    for ($i = 1; $i -le $ReplicaCount; $i++) {
+        $hash = Get-PublicKeyHashHex (Join-Path $ConfigDir "node$i.pub")
+        $newState[$hash] = @{ balance = "0"; nonce = 0 }
+    }
+
+    $genesis.state = $newState
+
+    if ($genesis.transactions -and $genesis.transactions.Count -ge 1) {
+        $genesis.transactions[0].from = '1234567891234567891234567891234567891234'
+    }
+
+    if ($genesis.transactions -and $genesis.transactions.Count -ge 2 -and $clientHashes.Count -ge 1) {
+        $client1Addr = $clientHashes[0]
+        $genesis.transactions[1].from = '1234567891234567891234567891234567891234'
+        $genesis.transactions[1].to = $client1Addr
+        $genesis.transactions[1].data = '0xa9059cbb' + (Pad-Address $client1Addr) + (Convert-IntegerToHex256Bit 1000)
+    }
+
+    $genesis | ConvertTo-Json -Depth 32 | Set-Content -Path $GenesisPath
+    Write-Host "genesis.json regenerated with public-key hash addresses."
+}
+
 Write-Host "Checking RSA keys..."
 
 for ($i = 1; $i -le $r; $i++) {
@@ -56,6 +135,7 @@ for ($i = 1; $i -le $r; $i++) {
     $pub  = "$ConfigDir\node$i.pub"
     if (-not (Test-Path $priv) -or -not (Test-Path $pub)) {
         New-KeyPair -PrivPath $priv -PubPath $pub
+        $keysWereGenerated = $true
     }
 }
 
@@ -64,10 +144,17 @@ for ($i = 1; $i -le $c; $i++) {
     $pub  = "$ConfigDir\client$i.pub"
     if (-not (Test-Path $priv) -or -not (Test-Path $pub)) {
         New-KeyPair -PrivPath $priv -PubPath $pub
+        $keysWereGenerated = $true
     }
 }
 
 Write-Host "All RSA keys ready."
+
+$GenesisPath = Join-Path $ProjectDir "blocks\genesis.json"
+if ($keysWereGenerated) {
+    Write-Host "Updating genesis.json to match newly generated keys..."
+    Write-GenesisJson -GenesisPath $GenesisPath -ConfigDir $ConfigDir -ReplicaCount $r -ClientCount $c
+}
 
 $groupKeyPath = "$ConfigDir\groupKey.json"
 $sharesExist  = $true

@@ -3,7 +3,10 @@ package pt.depchain.hotstuff;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import org.hyperledger.besu.datatypes.Address;
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -13,6 +16,9 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
 import pt.depchain.communication.Block;
+import pt.depchain.communication.ByteArrayHexAdapter;
+import pt.depchain.communication.State;
+import pt.depchain.communication.Transaction;
 
 /**
  * Simple in-memory blockchain storage.
@@ -24,11 +30,16 @@ public class Blockchain {
     private final Map<String, TreeNode> nodesByHash;
     private final List<String> committedCommands;
     private TreeNode lastCommittedNode;
+
+    private AccountOperations accountOperations; 
     
     private final List<Block> committedBlocks;
 
     public Blockchain() {
         Block genesisBlock = loadGenesisBlock();
+
+        accountOperations = new AccountOperations();
+
         this.root = new TreeNode(genesisBlock); // Genesis block
         this.nodesByHash = new HashMap<>();
         this.committedBlocks = new ArrayList<>();
@@ -38,10 +49,44 @@ public class Blockchain {
         nodesByHash.put(bytesToHex(root.getHash()), root);
         committedCommands.add(root.getCommand());
 
+
+        if (genesisBlock.getStates() != null) {
+            for (Map.Entry<String, State> entry : genesisBlock.getStates().entrySet()) {
+                String accountAddress = entry.getKey();
+                State accountState = entry.getValue();
+                accountOperations.initializeAccount(accountAddress, accountState);
+            }
+        }
+
         if (genesisBlock.getTransactions() != null) {
-            for (Object tx : genesisBlock.getTransactions()) {
-                // TODO: replace with EVMExecutor later
-                System.out.println("[GENESIS] Processing transaction: " + tx.toString());
+            for (Transaction tx : genesisBlock.getTransactions()) {
+                try {
+                    Address sender = Address.fromHexString(accountOperations.normalizeAddressHex(tx.getFrom()));
+
+                    if (tx.getTo() == null) {
+                        accountOperations.deployContract(
+                            sender,
+                            Address.fromHexString("1234567891234567891234567891234567891234")
+                        );
+                        continue;
+                    }
+
+                    Address rewardNode = null;
+                    if (tx.getTo() != null) {
+                        try {
+                            rewardNode = Address.fromHexString(accountOperations.normalizeAddressHex(tx.getTo()));
+                        } catch (Exception ignored) {
+                            // 'to' can be alias text in genesis; reward target is optional.
+                        }
+                    }
+
+                    String calldataHex = normalizeCalldataHex(tx.getData());
+                    if (calldataHex != null && !calldataHex.isEmpty()) {
+                        accountOperations.genericCall(sender, calldataHex, false, rewardNode);
+                    }
+                } catch (Exception e) {
+                    System.out.println("[BLOCKCHAIN] Skipping invalid genesis tx: " + e.getMessage());
+                }
             }
         }
 
@@ -169,6 +214,19 @@ public class Blockchain {
         return sb.toString();
     }
 
+    private static String normalizeCalldataHex(byte[] data) {
+        if (data == null || data.length == 0) return null;
+
+        String asText = new String(data, StandardCharsets.UTF_8).trim();
+        if (asText.startsWith("0x") && asText.length() > 2) {
+            return asText.substring(2);
+        }
+        if (asText.matches("(?i)^[0-9a-f]+$")) {
+            return asText;
+        }
+        return bytesToHex(data);
+    }
+
     public TreeNode[] getChildrenNodesFromHash(byte[] hash) {
         TreeNode node = nodesByHash.get(bytesToHex(hash));
         if (node != null) {
@@ -178,18 +236,49 @@ public class Blockchain {
     }
 
     private Block loadGenesisBlock() {
-        try {
-            Gson gson = new Gson();
-            FileReader reader = new FileReader("../blocks/genesis.json");
-            return gson.fromJson(reader, Block.class);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to load genesis block", e);
+        Gson gson = new GsonBuilder()
+            .registerTypeHierarchyAdapter(byte[].class, new ByteArrayHexAdapter())
+            .create();
+        String[] candidatePaths = {
+            "../blocks/genesis.json",
+            "blocks/genesis.json",
+            "./blocks/genesis.json",
+            "project/blocks/genesis.json"
+        };
+
+        Exception lastError = null;
+        for (String path : candidatePaths) {
+            File file = new File(path);
+            if (!file.exists()) {
+                continue;
+            }
+
+            try (FileReader reader = new FileReader(file, StandardCharsets.UTF_8)) {
+                Block block = gson.fromJson(reader, Block.class);
+                if (block == null) {
+                    throw new IllegalStateException("Parsed genesis is null: " + file.getAbsolutePath());
+                }
+                System.out.println("[BLOCKCHAIN] Loaded genesis from: " + file.getAbsolutePath());
+                return block;
+            } catch (Exception e) {
+                lastError = e;
+                throw new RuntimeException("Failed to parse genesis block at " + file.getAbsolutePath(), e);
+            }
         }
+
+        throw new RuntimeException(
+            "Failed to find genesis block. Tried paths: " + String.join(", ", candidatePaths) +
+            " | user.dir=" + System.getProperty("user.dir"),
+            lastError
+        );
     }
 
     private void persistBlock(Block block, int index) {
         try {
-            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+            Gson gson = new GsonBuilder()
+                .setPrettyPrinting()
+                .registerTypeHierarchyAdapter(byte[].class, new ByteArrayHexAdapter())
+                .create();
             File dir = new File("../blocks");
             if (!dir.exists()) dir.mkdirs();
 
@@ -204,6 +293,6 @@ public class Blockchain {
 
         } catch (Exception e) {
             e.printStackTrace();
+        }
     }
-}
 }

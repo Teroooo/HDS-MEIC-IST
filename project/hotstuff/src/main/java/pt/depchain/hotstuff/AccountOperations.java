@@ -1,10 +1,19 @@
 package pt.depchain.hotstuff;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+
+import pt.depchain.communication.Block;
+import pt.depchain.communication.State;
+
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileReader;
 import java.io.PrintStream;
+import java.io.FileReader;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,6 +55,8 @@ public class AccountOperations {
     String decreaseAllowance;
 
     public AccountOperations() {
+        this.contractAddress = Address.fromHexString("1234567891234567891234567891234567891234");
+
         try {
             // Option 1: Move up one level to the sibling ERC20 folder (../ERC20/...)
             Path parentErc20 = Path.of("..", "ERC20", "keccak_256.json");
@@ -80,34 +91,41 @@ public class AccountOperations {
         } catch (Exception e) {
             throw new RuntimeException("Failed to load ERC20 selectors from keccak_256.json at specified paths", e);
         }
+
+
     }
 
     public void main(String[] args) {
+        // // === Step 1: Create EOAs ===
+        // Address client1Addr = Address.fromHexString("1111111111111111111111111111111111111111");
+        // Address client2Addr = Address.fromHexString("2222222222222222222222222222222222222222");
+        // Address client3Addr = Address.fromHexString("3333333333333333333333333333333333333333");
 
-        // === Step 1: Create EOAs ===
-        Address client1Addr = Address.fromHexString("1111111111111111111111111111111111111111");
-        Address client2Addr = Address.fromHexString("2222222222222222222222222222222222222222");
-        Address client3Addr = Address.fromHexString("3333333333333333333333333333333333333333");
 
+        // createAccount(client1Addr, BigInteger.valueOf(10000000));
+        // createAccount(client2Addr, BigInteger.valueOf(10000000));
+        // createAccount(client3Addr, BigInteger.valueOf(10000000));
+        // contractAddress = Address.fromHexString("1234567891234567891234567891234567891234");
+        // simpleWorld.createAccount(contractAddress, 0, Wei.ZERO);
 
-        createAccount(client1Addr, BigInteger.valueOf(10000000));
-        createAccount(client2Addr, BigInteger.valueOf(10000000));
-        createAccount(client3Addr, BigInteger.valueOf(10000000));
-        contractAddress = Address.fromHexString("1234567891234567891234567891234567891234");
-        simpleWorld.createAccount(contractAddress, 0, Wei.ZERO);
+        // // === Step 2: Deploy contract (constructor runs here) ===
+        // deployContract(client1Addr, contractAddress); // deployer = client1, owner = treasury
 
-        // === Step 2: Deploy contract (constructor runs here) ===
-        deployContract(client1Addr, contractAddress); // deployer = client1, owner = treasury
+        // MutableAccount account = (MutableAccount) simpleWorld.get(contractAddress);
+        // System.out.println(account.getCode().size());
 
-        MutableAccount account = (MutableAccount) simpleWorld.get(contractAddress);
-        System.out.println(account.getCode().size());
+        // // After deploy
+        // System.out.println("After deploy:");
+        // System.out.println("Contract address: " + callBalanceOf(contractAddress, contractAddress));
+        // System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
+        // System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
+        // System.out.println("Client3: " + callBalanceOf(client3Addr, client3Addr));
 
-        // After deploy
-        System.out.println("After deploy:");
-        System.out.println("Contract address: " + genericCall(contractAddress, balanceOf + padAddress(contractAddress), false, client3Addr));
-        System.out.println("Client1: " + genericCall(contractAddress, balanceOf + padAddress(client1Addr), false, client3Addr));
-        System.out.println("Client2: " + genericCall(contractAddress, balanceOf + padAddress(client2Addr), false, client3Addr));
-        System.out.println("Client3: " + genericCall(contractAddress, balanceOf + padAddress(client3Addr), false, client3Addr));
+        // String data = balanceOf + padAddress(client1Addr);
+        // System.out.println(genericCall(client1Addr, data, true, client3Addr));
+        // BigInteger value = BigInteger.valueOf(20);
+        // data = transfer + padAddress(client1Addr) + convertIntegerToHex256Bit(value.intValue());
+        // genericCall(contractAddress, data, true, client3Addr);
 
         //String data = balanceOf + padAddress(client1Addr);
 
@@ -116,18 +134,18 @@ public class AccountOperations {
         // transfer(contractAddress, client2Addr, BigInteger.valueOf(1000));
 
         // // // Distribute
-        String data = transfer + padAddress(client1Addr) + convertIntegerToHex256Bit(BigInteger.valueOf(1000).intValue());
-        genericCall(contractAddress, data, true, client3Addr);
-        data = transfer + padAddress(client2Addr) + convertIntegerToHex256Bit(BigInteger.valueOf(1000).intValue());
-        genericCall(contractAddress, data, true, client3Addr);
+        // String data = transfer + padAddress(client1Addr) + convertIntegerToHex256Bit(BigInteger.valueOf(1000).intValue());
+        // genericCall(contractAddress, data, true, client3Addr);
+        // data = transfer + padAddress(client2Addr) + convertIntegerToHex256Bit(BigInteger.valueOf(1000).intValue());
+        // genericCall(contractAddress, data, true, client3Addr);
 
 
         //After distribution
-        System.out.println("After distribution:");
-        System.out.println("Contract address: " + genericCall(contractAddress, balanceOf + padAddress(contractAddress), false, client3Addr));
-        System.out.println("Client1: " + genericCall(contractAddress, balanceOf + padAddress(client1Addr), false, client3Addr));
-        System.out.println("Client2: " + genericCall(contractAddress, balanceOf + padAddress(client2Addr), false, client3Addr));
-        System.out.println("Client3: " + genericCall(contractAddress, balanceOf + padAddress(client3Addr), false, client3Addr));
+        // System.out.println("After distribution:");
+        // System.out.println("Contract address: " + callBalanceOf(contractAddress, contractAddress));
+        // System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
+        // System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
+        // System.out.println("Client3: " + callBalanceOf(client3Addr, client3Addr));
 
         // // === Step 4: Transfer tokens ===
         // System.out.println("\nTransferring 100 tokens from client1 to client2...\n");
@@ -147,8 +165,35 @@ public class AccountOperations {
         }
         account.setBalance(Wei.of(initialBalance));
         userAccounts.put(accountAddress.toHexString(), account);
+        System.out.println("Created account: " + accountAddress + " with balance: " + initialBalance);
     }
 
+    public void initializeAccount(String accountAddress, State accountState) {
+        String normalizedHex = normalizeAddressHex(accountAddress);
+        BigInteger initialBalance = BigInteger.valueOf((long) accountState.getBalance());
+        createAccount(Address.fromHexString(normalizedHex), initialBalance);
+    }
+
+
+    public String normalizeAddressHex(String rawKey) {
+        if ("contractAccount_address".equals(rawKey)) {
+            return "1234567891234567891234567891234567891234";
+        }
+
+        String hex = rawKey.startsWith("0x") ? rawKey.substring(2) : rawKey;
+
+        if (hex.length() == 64) {
+            return hex.substring(0, 40);
+        }
+
+        if (hex.length() == 40) {
+            return hex;
+        }
+
+        throw new IllegalArgumentException("Invalid address key length in genesis state: " + rawKey);
+    }
+
+    
     public void deployContract(Address deployer, Address owner) {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         PrintStream printStream = new PrintStream(outputStream);

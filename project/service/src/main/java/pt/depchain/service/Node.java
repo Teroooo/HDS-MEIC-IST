@@ -57,7 +57,6 @@ public class Node {
 
     private static Map<String, Message> activeRequestsBuffer = new LinkedHashMap<>();
 
-    private static Map<String, Message> bufferedPrepare = new HashMap<>();
     private static final Gson gson = new Gson();
 
     private static CryptoLibrary crypto;
@@ -152,43 +151,6 @@ public class Node {
 
         System.out.println("[NODE] Key exchange completed.");
 
-        // Set up callback for commands
-        /*
-                consensus.setDecideCallback((decidedNode, view) -> {
-            stopPacemaker();
-            System.out.println("[NODE] Decision reached at view " + view);
-
-            blockchain.executeCommittedBranch(decidedNode);
-            System.out.println(blockchain.getBlockchainState());
-
-            String requestKey = decidedNode.getRequestKey();
-
-            link.send(Link.Type.CLIENT, "client1", Message.Type.REPLY,
-                    "message " + requestKey + " SUCCESS in view " + view);
-
-            Message completedMsg = activeRequestsBuffer.remove(requestKey);
-            if (completedMsg != null) {
-                pendingClientRequests.put(requestKey, RequestState.COMPLETED);
-            }
-
-            try {
-                boolean hasPending = pendingClientRequests.values()
-                        .stream()
-                        .anyMatch(s -> s == RequestState.PENDING);
-
-                if (hasPending) {
-                    if (consensus.isLeader()) {
-                        proposePendingCommandsIfLeader(link, nodeId);
-                    } else {
-                        startPacemaker(link, nodeId);
-                    }
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
-        */
-
         //PHASE 2: DECIDECALLBACK
         consensus.setDecideCallback((decidedNode, view) -> {
             stopPacemaker();
@@ -199,12 +161,13 @@ public class Node {
 
             List<Transaction> committedTxs = decidedNode.getBlock().getTransactions();
             for (Transaction txReq : committedTxs) {
-                String sender = txReq.getFrom();
+                Address senderAddress = Address.fromHexString(txReq.getFrom());
+                String clientId = getClientIdFromAddress(senderAddress);
                 int nonce = txReq.getNonce();
 
-                String txKey = sender + "-" + nonce;
+                String txKey = clientId + "-" + nonce;
 
-                String clientId = txReq.getFrom(); // Extract sender ID from the Transaction object
+                
 
                 // 3. Send specialized reply to the SPECIFIC client who sent this TX
                 link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
@@ -270,38 +233,7 @@ public class Node {
                 break;
                 
             case PREPARE:
-                /*
-                HotStuffMessage hsmsg =  gson.fromJson(msg.getPayload(), HotStuffMessage.class);
-                String requestKey = hsmsg.getProposal().getRequestKey();
-                String command = hsmsg.getProposal().getCommand();
-
-                Message clientMsg = activeRequestsBuffer.get(requestKey);
-
-                RequestState state = pendingClientRequests.get(requestKey);
-
-                if (clientMsg == null) {
-
-                    if (state == RequestState.COMPLETED) {
-                        System.out.println("[NODE] Ignoring stale PREPARE for " + requestKey);
-                        return;
-                    }
-                    
-                    System.out.println("[NODE] Missing request " + requestKey + ", buffering PREPARE");
-                    bufferedPrepare.put(requestKey, msg);
-                    return;
-                }
-
-                JsonObject payloadJson = JsonParser.parseString(clientMsg.getPayload()).getAsJsonObject();
-
-                String clientCommand = payloadJson.get("text").getAsString();
-
-                if (!clientCommand.equals(command)) {
-                    System.out.println("[NODE] Byzantine leader detected: command mismatch for " + requestKey);
-                    return; // do not vote
-                }
-                consensus.handlePrepare(msg);
-                break;
-                */
+               
                 //PHASE 2: TODO PREPARE
                 // 1. Parse the HotStuff message and extract the proposed Block
                 HotStuffMessage hsmsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
@@ -316,10 +248,11 @@ public class Node {
 
                 // 2. Iterate through every transaction in the block to verify it
                 for (Transaction tx : proposedBlock.getTransactions()) {
-                    String sender = tx.getFrom();
+                    Address senderAddress = Address.fromHexString(tx.getFrom());
+                    String clientId = getClientIdFromAddress(senderAddress);
                     int nonce = tx.getNonce();
 
-                    String txKey = sender + "-" + nonce;
+                    String txKey = clientId + "-" + nonce;
                     
                     // Check if we have already completed this specific transaction
                     if (pendingClientRequests.get(txKey) == RequestState.COMPLETED) {
@@ -328,15 +261,15 @@ public class Node {
                     }
 
                     // Check if we even have the original client message for this transaction
-                    Message clientMsg = activeRequestsBuffer.get(txKey);
+                    // Message clientMsg = activeRequestsBuffer.get(txKey);
                     
-                    if (clientMsg == null) {
-                        // OPTIONAL: In a robust BFT system, if you are missing a TX, 
-                        // you might buffer the PREPARE or request the missing TX from the leader.
-                        System.out.println("[NODE] Missing client request for " + txKey + ". Buffering PREPARE.");
-                        bufferedPrepare.put(txKey, msg); 
-                        return; // Exit: we cannot vote on a block if we don't know the contents
-                    }
+                    // if (clientMsg == null) {
+                    //     // OPTIONAL: In a robust BFT system, if you are missing a TX, 
+                    //     // you might buffer the PREPARE or request the missing TX from the leader.
+                    //     System.out.println("[NODE] Missing client request for " + txKey + ". Buffering PREPARE.");
+                    //     bufferedPrepare.put(txKey, msg); 
+                    //     return; // Exit: we cannot vote on a block if we don't know the contents
+                    // }
 
                     // 3. validate transaction again
         
@@ -414,17 +347,6 @@ public class Node {
         if (state == null) {
             pendingClientRequests.put(key, RequestState.PENDING);
             activeRequestsBuffer.put(key, msg);
-            Message buffered = bufferedPrepare.remove(key);
-            if (buffered != null) {
-                System.out.println("[NODE] Processing buffered PREPARE for " + key);
-                HotStuffMessage hsmsg = gson.fromJson(buffered.getPayload(), HotStuffMessage.class);
-                String proposedCommand = hsmsg.getProposal().getCommand();
-                if (!proposedCommand.equals(stringToAppend)) {
-                    System.out.println("[NODE] Byzantine leader detected: command mismatch for " + key);
-                } else {
-                    consensus.handlePrepare(buffered);
-                }
-            }
             System.out.println("[NODE] New request added to pending buffer with key: " + key);
             if (consensus.isLeader()) {
                 consensus.addCommand(stringToAppend, key);
@@ -439,30 +361,7 @@ public class Node {
         }
     }
 
-    /*
-        private static void proposePendingCommandsIfLeader(Link link, String nodeId) throws Exception {
-
-        // Look for the first pending command
-        for (Map.Entry<String, Message> entry : activeRequestsBuffer.entrySet()) {
-            String key = entry.getKey();
-            RequestState state = pendingClientRequests.get(key);
-
-            if (state == RequestState.PENDING) {
-                JsonObject payloadJson = JsonParser.parseString(entry.getValue().getPayload()).getAsJsonObject();
-                String clientId = payloadJson.get("clientId").getAsString();
-                int messageId = payloadJson.get("messageId").getAsInt();
-                String text = payloadJson.get("text").getAsString();
-
-                // Add it to consensus to propose
-                System.out.println("[NODE] Node " + nodeId + " (new leader) proposing pending command " + key);
-                consensus.addCommand(text, clientId + "-" + messageId);
-                startPacemaker(link, nodeId);
-                break; // propose one command at a time per view
-            }
-        }
-    }
-    */
-
+    
     //Phase 2: new proposePendingCommands
     private static void proposePendingCommandsIfLeader(Link link, String nodeId) throws Exception {
         if (!consensus.isLeader()) {
@@ -574,12 +473,6 @@ public class Node {
             pendingClientRequests.put(key, RequestState.PENDING);
             activeRequestsBuffer.put(key, msg);
 
-            Message delayedPrepare = bufferedPrepare.remove(key);
-            if (delayedPrepare != null) {
-                System.out.println("[NODE] Transaction " + key + " arrived! Resuming buffered PREPARE.");
-                // Re-trigger the PREPARE handling now that we have the data
-                handleMessage(link, nodeId, delayedPrepare, crypto);
-            }
             if (consensus.isLeader()) {
                 //consensus.addCommand(stringToAppend, key);
                 pendingTransactions.add(tx);
@@ -809,6 +702,7 @@ public class Node {
                         addressBook.put(clientName, Address.fromHexString(hexAddress));
                         
                         System.out.println("Loaded: " + clientName + " -> " + hexAddress);
+                        System.out.println("Address book entry: " + clientName + " -> " + addressBook.get(clientName).toHexString());
                     } catch (Exception e) {
                         System.err.println("Skipping " + fileName + " due to error: " + e.getMessage());
                     }
@@ -853,6 +747,15 @@ public class Node {
         }
 
         throw new IllegalArgumentException("Invalid address key length derived: " + hex.length());
+    }
+
+    private static String getClientIdFromAddress(Address address) {
+        for (Map.Entry<String, Address> entry : addressBook.entrySet()) {
+            if (entry.getValue().equals(address)) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 
 }

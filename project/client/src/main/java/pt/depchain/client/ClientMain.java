@@ -131,8 +131,8 @@ public class ClientMain {
                     //TODO TRATAMENTO DE FROM E TO
                     Transaction tx = new Transaction(
                         "DEP",
-                        clientId,
-                        to,
+                        addFrom.toHexString(),
+                        addTo.toHexString(),
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
@@ -184,11 +184,12 @@ public class ClientMain {
 
 
                     messageId++;
+                    Address addFrom = Address.fromHexString(normalizeAddressHex(clientId));
                     Address add = Address.fromHexString(normalizeAddressHex(to));
                     String dataStr = transfer + padAddress(add) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
                     Transaction tx = new Transaction(
                         "IST",
-                        clientId,
+                        addFrom.toHexString(),
                         IST_CONTRACT_ADDRESS, // n sei se depois temos de mudar o address do contract para alguma hash em vez de ser só "IST_CONTRACT", mas para já fica assim
                         dataStr.getBytes(), //devemos ter o keccak das functions + hash dos args
                         gasPrice,
@@ -242,15 +243,16 @@ public class ClientMain {
                     System.out.print("Gas limit: ");
                     long gasLimit = Long.parseLong(scanner.nextLine());
 
+                    Address addFrom = Address.fromHexString(normalizeAddressHex(clientId));
 
                     messageId++;
-                    Address addFrom = Address.fromHexString(normalizeAddressHex(from));
+                    Address addFromArg = Address.fromHexString(normalizeAddressHex(from));
                     Address addTo = Address.fromHexString(normalizeAddressHex(to));
 
-                    String dataStr = transfer + padAddress(addFrom) + padAddress(addTo) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
+                    String dataStr = transfer + padAddress(addFromArg) + padAddress(addTo) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
                     Transaction tx = new Transaction(
                         "IST",
-                        clientId,
+                        addFrom.toHexString(),
                         IST_CONTRACT_ADDRESS,
                         dataStr.getBytes(),
                         gasPrice,
@@ -298,13 +300,14 @@ public class ClientMain {
                     System.out.print("Gas limit: ");
                     long gasLimit = Long.parseLong(scanner.nextLine());
 
+                    Address addFrom = Address.fromHexString(normalizeAddressHex(clientId));
 
                     messageId++;
                     Address addSpender = Address.fromHexString(normalizeAddressHex(spender));
                     String dataStr = increaseAllowance + padAddress(addSpender) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
                     Transaction tx = new Transaction(
                         "IST",
-                        clientId,
+                        addFrom.toHexString(),
                         IST_CONTRACT_ADDRESS,
                         dataStr.getBytes(),
                         gasPrice,
@@ -352,13 +355,14 @@ public class ClientMain {
                     System.out.print("Gas limit: ");
                     long gasLimit = Long.parseLong(scanner.nextLine());
 
-
+                    
+                    Address addFrom = Address.fromHexString(normalizeAddressHex(clientId));
                     messageId++;
                     Address addSpender = Address.fromHexString(normalizeAddressHex(spender));
                     String dataStr = decreaseAllowance + padAddress(addSpender) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
                     Transaction tx = new Transaction(
                         "IST",
-                        clientId,
+                        addFrom.toHexString(),
                         IST_CONTRACT_ADDRESS,
                         dataStr.getBytes(),
                         gasPrice,
@@ -407,6 +411,7 @@ public class ClientMain {
                     long gasLimit = Long.parseLong(scanner.nextLine());
 
 
+                    Address addFrom = Address.fromHexString(normalizeAddressHex(clientId));
                     messageId++;
                     Address addOwner = Address.fromHexString(normalizeAddressHex(owner));
                     Address addSpender = Address.fromHexString(normalizeAddressHex(spender));
@@ -414,7 +419,7 @@ public class ClientMain {
                     String dataStr = allowance + padAddress(addOwner) + padAddress(addSpender);
                     Transaction tx = new Transaction(
                         "IST",
-                        clientId,
+                        addFrom.toHexString(),
                         IST_CONTRACT_ADDRESS,
                         dataStr.getBytes(),
                         gasPrice,
@@ -461,14 +466,15 @@ public class ClientMain {
                     System.out.print("Gas limit: ");
                     long gasLimit = Long.parseLong(scanner.nextLine());
 
+                    Address addFrom = Address.fromHexString(normalizeAddressHex(clientId));
                     messageId++;
                     Address add = Address.fromHexString(normalizeAddressHex(account));
                     String dataStr = "BALANCE_DEP";
                     //TODO TRATAMENTO DE FROM E TO
                     Transaction tx = new Transaction(
                         "DEP",
-                        clientId,
-                        account,
+                        addFrom.toHexString(),
+                        add.toHexString(),
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
@@ -510,13 +516,13 @@ public class ClientMain {
                     System.out.print("Gas limit: ");
                     long gasLimit = Long.parseLong(scanner.nextLine());
 
-
+                    Address addFrom = Address.fromHexString(normalizeAddressHex(clientId));
                     messageId++;
                     Address add = Address.fromHexString(normalizeAddressHex(clientId));
                     String dataStr = balanceOf + padAddress(add);
                     Transaction tx = new Transaction(
                         "IST",
-                        clientId,
+                        addFrom.toHexString(),
                         IST_CONTRACT_ADDRESS,
                         dataStr.getBytes(),
                         gasPrice,

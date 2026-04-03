@@ -239,9 +239,9 @@ public class CorrectAppendTest {
                     Process node = nodes.get(i);
                     String nodeOutput = readProcessOutputNonBlocking(node);
                     
-                    if (nodeOutput.contains("0x9192594bd4e047f4fa427a951fceb8c7c70b2094,") && 
-                    nodeOutput.contains("0x1234567891234567891234567891234567891234,") && 
-                    nodeOutput.contains("IST")) {
+                    if (nodeOutput.contains("\"Type\": \"IST\"") && 
+                    nodeOutput.contains("0x9192594bd4e047f4fa427a951fceb8c7c70b2094") && 
+                    nodeOutput.contains("0x1234567891234567891234567891234567891234")) {
                         found[i] = true;
                         System.out.println("Node " + i + " confirmed the transaction.");
                     }

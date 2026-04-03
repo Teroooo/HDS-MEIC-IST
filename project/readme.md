@@ -1,14 +1,23 @@
-## Requirements:
+# Requirements:
 - Java above version 21, 
 - Apache Maven above version 3.8.
 - Openssl 3.6.1:27
 
-## Config files
-genesis.json
-groupKey.json
-membership.json
 
-## Compile & Run
+# Troubleshooting:
+- If you are not running the project with launch make sure you have all configs set:  
+public and private keys,  
+membership.json,  
+genesis.json   
+groupKey.json.  
+
+- In case any port is till binded and you get "port is already in use" error you can terminate previous executions with:
+```
+taskkill /F /IM java.exe /T
+```
+- Something else
+
+# Compile & Run
 
 
 Compile project with: 
@@ -17,12 +26,13 @@ Compile project with:
 mvn clean install -DskipTests
 ```
 
-Run Automated Script:
+## Run Automated Script:
 ```
 .\launch.ps1 -c <Nº of Clients> -r <Nº of Nodes>
 ```
+If your config folder doesnt have any keys, this script will generate them for you, as well as a genesis block, where the addresses are generated based on the Node/Client public keys.
 
-Run Client: 
+## Run Client: 
 ```
 mvn exec:java "-Dexec.mainClass=pt.depchain.client.ClientMain" "-Dexec.args=<clientid> <PrivKey_Path> <PubKey_Path>"
 
@@ -30,7 +40,7 @@ Example:
 mvn exec:java "-Dexec.mainClass=pt.depchain.client.ClientMain" "-Dexec.args=client1 ../config/client1.priv ../config/client1.pub"
 ```
 
-Run Safe Node: 
+## Run Safe Node: 
 ```
 mvn exec:java "-Dexec.mainClass=pt.depchain.service.Node" "-Dexec.args=<Nodeid> <PrivKey_Path> <PubKey_Path>"  
 
@@ -38,24 +48,24 @@ Example:
 mvn exec:java "-Dexec.mainClass=pt.depchain.service.Node" "-Dexec.args=1 ../config/node1.priv ../config/node1.pub" 
 ```
 
-Run Byzantine Node: 
+## Run Byzantine Node: 
 ```
-mvn exec:java "-Dexec.mainClass=pt.depchain.service.ByzantineNode" "-Dexec.args=\<id\> \[behavior\]"  
+mvn exec:java "-Dexec.mainClass=pt.depchain.service.ByzantineNode" "-Dexec.args=<id> [behavior]"  
 ```
 ### Byzantine Node behaviors: (If not provided, the default is bad-hash)  
 
 **bad-hash** - When Node is leader will give a corrupted command.  
-duplicate-msg - Node sends 2 identical votes.  
+**duplicate-msg** - Node sends 2 identical votes.  
 **bad-share** - This node will sign with an invalide share.  
 **wrong-sender** - Node spoofs its ID as the next one in line, triggers warning.  
 
-## Full-scope tests: 
+# Full-scope tests: 
 
 They initialize 4 nodes, one or more of them might be byzantine considering the different examples.
 
 Run Command: 
 ```
-mvn clean test -pl test -Dtest=\<TestName\>  
+mvn clean test -pl test -Dtest=<TestName>  
 ```
 
 ### Test List:  
@@ -77,12 +87,12 @@ mvn clean test -pl test -Dtest=\<TestName\>
 **TwoBadSharesTest** - 2 Safe nodes, 2 Byzantine Node that signs with an invalid share each, consensus not reached.  
 
 
-## Unit tests: 
+# Unit tests: 
 They test specific small parts of our code.  
 
 Run Command: 
 ```
-mvn clean test -pl service -Dtest=BFTConsensusTest.\<TestName\>  
+mvn clean test -pl service -Dtest=BFTConsensusTest.<TestName>  
 ```
 
 ### Test List: 

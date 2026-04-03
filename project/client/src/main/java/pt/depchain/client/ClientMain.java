@@ -48,7 +48,6 @@ public class ClientMain {
         String publicKeyPath = args[2];
 
         int messageId = 0; 
-        int nonce = 0;
 
         CryptoLibrary crypto = new CryptoLibrary(privateKeyPath, publicKeyPath);
         Link link = new Link(clientId, Link.Type.CLIENT, "../config/membership.json", privateKeyPath, publicKeyPath, crypto);
@@ -137,7 +136,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        nonce + 1,
+                        messageId,
                         null
                     );
 
@@ -195,7 +194,7 @@ public class ClientMain {
                         dataStr.getBytes(), //devemos ter o keccak das functions + hash dos args
                         gasPrice,
                         gasLimit,
-                        nonce + 1,
+                        messageId,
                         null //devemos ter a assinatura da transaction, mas para já deixamos null
                     );
                     
@@ -258,7 +257,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        nonce + 1,
+                        messageId,
                         null
                     );
 
@@ -313,7 +312,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        nonce + 1,
+                        messageId,
                         null
                     );
 
@@ -368,7 +367,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        nonce + 1,
+                        messageId,
                         null
                     );
 
@@ -425,7 +424,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        nonce + 1,
+                        messageId,
                         null
                     );
 
@@ -479,7 +478,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        nonce + 1,
+                        messageId,
                         null
                     );
 
@@ -528,7 +527,7 @@ public class ClientMain {
                         dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
-                        nonce + 1,
+                        messageId,
                         null
                     );
 

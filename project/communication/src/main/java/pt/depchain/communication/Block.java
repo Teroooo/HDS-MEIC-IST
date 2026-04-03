@@ -1,6 +1,7 @@
 package pt.depchain.communication;
 
 import java.io.Serializable;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +28,7 @@ public class Block implements Serializable{
     public Block(String previousHash, List<Transaction> transactions) {
         this.previousHash = previousHash;
         this.transactions = transactions;
+        this.states = new HashMap<>(); // or new HashMap<>() if you prefer an empty map
         this.hash = computeHash();
     }
 
@@ -82,6 +84,10 @@ public class Block implements Serializable{
 
     public Transaction getTransactionById(int index) {
         return this.transactions.get(index);
+    }
+
+    public void setState(String address, State state) {
+        this.states.put(address, state);
     }
     
 

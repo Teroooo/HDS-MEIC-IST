@@ -471,7 +471,7 @@ public class HotStuffConsensus {
         currentProposal = verifiedProposal;
         System.out.println("[CONSENSUS] Leader " + myId + " running DECIDE phase");
         
-        System.out.println("\n[CONSENSUS] Leader checking proposed block: "+ currentProposal.getBlock() + "\n");
+        //System.out.println("\n[CONSENSUS] Leader checking proposed block: "+ currentProposal.getBlock() + "\n");
         
         // Create commitQC
         QuorumCertificate commitQC = new QuorumCertificate(QuorumCertificate.QCType.COMMIT, viewNumber, currentProposal.getHash());
@@ -549,7 +549,7 @@ public class HotStuffConsensus {
     }
     
 
-    private int getLeader(int view) {
+    public int getLeader(int view) {
         return ((view - 1) % n) + 1;
     }
     

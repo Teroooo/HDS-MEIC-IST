@@ -158,17 +158,17 @@ public class Node {
             stopPacemaker();
             System.out.println("[NODE] Decision reached at view " + view);
 
-            blockchain.executeCommittedBranch(decidedNode);
-            System.out.println(blockchain.getBlockchainStateWithBlocks());
-
+            
             List<Transaction> committedTxs = decidedNode.getBlock().getTransactions();
             for (Transaction txReq : committedTxs) {
                 Address senderAddress = Address.fromHexString(txReq.getFrom());
                 String clientId = getClientIdFromAddress(senderAddress);
                 int nonce = txReq.getNonce();
-
+                
                 String txKey = clientId + "-" + nonce;
 
+                
+                
                 Message completedMsg = activeRequestsBuffer.remove(txKey);
                 if (completedMsg != null) {
                     pendingClientRequests.put(txKey, RequestState.COMPLETED);
@@ -177,24 +177,38 @@ public class Node {
                 BigInteger balance = blockchain.getBalance(senderAddress);
                 BigInteger requiredAmount = BigInteger.valueOf(txReq.getGasPrice()).multiply(BigInteger.valueOf(txReq.getGasLimit()));
                 
+                
                 if (balance.compareTo(requiredAmount) < 0) {
+                    
                     System.out.println("[NODE] Transaction " + txKey + " failed during execution due to insufficient balance.");
                     link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
-                            "Transaction " + txKey + " FAILURE before execution (insufficient balance) + blockchain balance: " + balance);
+                        "Transaction " + txKey + " FAILURE before execution (insufficient balance) + blockchain balance: " + balance);
                     continue;
                 }
-
+                
+                if (!txReq.getType().equals("DEP")) {
+                    int leaderId = consensus.getLeader(view);
+                    Address nodeAddress = addressBook.get("node" + leaderId);
+                    blockchain.callSmartContractOperation(senderAddress, txReq.getData(), nodeAddress, txReq.getGasPrice(), txReq.getGasLimit());
+                }
+                
+                
                 // 3. Send specialized reply to the SPECIFIC client who sent this TX
                 link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY,
-                        "Transaction " + txKey + " SUCCESS in block at view " + view);
-
-                // 4. Cleanup buffers for this specific transaction
+                    "Transaction " + txKey + " SUCCESS in block at view " + view);
+                    
+                    // 4. Cleanup buffers for this specific transaction
             }
+            
+            blockchain.executeCommittedBranch(decidedNode);
+            //System.out.println(blockchain.getBlockchainStateWithBlocks());
 
             try {
                 boolean hasPending = pendingClientRequests.values()
                         .stream()
                         .anyMatch(s -> s == RequestState.PENDING);
+
+                System.out.println("[NODE-DEBUGG] Checking for pending requests after decision. Has pending: " + hasPending);
 
                 if (hasPending) {
                     if (consensus.isLeader()) {
@@ -250,7 +264,7 @@ public class Node {
                 HotStuffMessage hsmsg = gson.fromJson(msg.getPayload(), HotStuffMessage.class);
                 Block proposedBlock = hsmsg.getProposal().getBlock();
                 System.out.println("Pending Transactions: " + pendingTransactions.size());
-                System.out.println("proposedBlock: " + proposedBlock);
+                //System.out.println("proposedBlock: " + proposedBlock);
                 System.out.println("activeRequestsBuffer: " + activeRequestsBuffer.toString());
                 if (proposedBlock == null || proposedBlock.getTransactions() == null) {
                     System.out.println("[NODE] Received empty or invalid block in PREPARE.");
@@ -445,18 +459,31 @@ public class Node {
         
         String clientId = payloadJson.get("clientId").getAsString();
         int messageId = payloadJson.get("messageId").getAsInt();  
-
+        
+        
         Transaction tx = gson.fromJson(payloadJson.get("transaction"), Transaction.class);      
+        
 
-        if (!basicValidation(tx) || !checkNonce(tx, clientId)) {
+
+        if (!basicValidation(tx)) {
             System.out.println("[NODE] Invalid transaction rejected at ingress");
 
             String txKey = clientId + "-" + messageId;
+            // Reply to client with FAILURE
+            blockchain.setNonce(Address.fromHexString(tx.getFrom()), messageId);
+            link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY, "Transaction " + txKey + " FAILURE (basic validation)");
+            return;
+        }
 
+        if (!checkNonce(tx, clientId)) {
+            System.out.println("[NODE] Invalid transaction rejected at ingress");
+
+            String txKey = clientId + "-" + messageId;
             // Reply to client with FAILURE
             link.send(Link.Type.CLIENT, clientId, Message.Type.REPLY, "Transaction " + txKey + " FAILURE (basic validation)");
             return;
         }
+        blockchain.setNonce(Address.fromHexString(tx.getFrom()), messageId);
 
         // If this node is the leader, queue the command
         String key = clientId + "-" + messageId;
@@ -477,10 +504,8 @@ public class Node {
                 pendingTransactions.add(tx);
                 startBlockCreationTimer(link, nodeId);            
             } else {
-                int leaderId = ((consensus.getViewNumber() - 1) % crypto.l) + 1;
-                link.send(Link.Type.NODE, String.valueOf(leaderId), Message.Type.TRANSACTION, msg.getPayload());
                 startPacemaker(link, nodeId);
-                System.out.println("[NODE] Request forwarded. Pacemaker started.");
+                System.out.println("[NODE] Pacemaker started.");
             }
             // store command in consensus queue for ALL replicas
         }
@@ -658,7 +683,7 @@ public class Node {
         Address sender = Address.fromHexString(tx.getFrom());
         long currentNonce = blockchain.getNonce(sender);
         System.out.println("[NODE] Checking nonce for transaction from " + clientId + ": expected " + (currentNonce + 1) + ", got " + tx.getNonce());
-
+        
         return tx.getNonce() == currentNonce + 1;
     }
 

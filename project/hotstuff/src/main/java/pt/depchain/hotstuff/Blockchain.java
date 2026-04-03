@@ -84,7 +84,7 @@ public class Blockchain {
 
                     String calldataHex = normalizeCalldataHex(tx.getData());
                     if (calldataHex != null && !calldataHex.isEmpty()) {
-                        accountOperations.genericCall(sender, calldataHex, false, null, tx.getGasPrice(), tx.getGasLimit());
+                        accountOperations.genericCall(sender, calldataHex, null, tx.getGasPrice(), tx.getGasLimit());
                     }
                 } catch (Exception e) {
                     System.out.println("[BLOCKCHAIN] Skipping invalid genesis tx: " + e.getMessage());
@@ -161,9 +161,14 @@ public class Blockchain {
 
         for (TreeNode node : pathToCommit) {
             if (!node.getBlock().equals("GENESIS")) {
+                accountOperations.updateState(node.getBlock());
+
                 committedBlocks.add(node.getBlock());
 
-                persistBlock(node.getBlock(), index);
+                Block blockToPersist = accountOperations.updateState(node.getBlock());
+
+
+                persistBlock(blockToPersist, index);
                 index++;
 
                 System.out.println("  [BLOCKCHAIN] Committed: \"" + node.getBlock() + "\"");
@@ -306,6 +311,10 @@ public class Blockchain {
         return accountOperations.getNonce(address);
     }
 
+    public void setNonce(Address address, long nonce) {
+        accountOperations.setNonce(address, nonce);
+    }
+
     public void incrementNonce(Address address) {
         accountOperations.incrementNonce(address);
     }
@@ -315,4 +324,13 @@ public class Blockchain {
     }
 
     
+
+    public void callSmartContractOperation(Address from, byte[] calldataHex, Address nodeAddress, long gasPrice, long gasLimit) {
+        accountOperations.genericCall(from, normalizeCalldataHex(calldataHex), nodeAddress, gasPrice, gasLimit);
+    }
+
+    public void printState() {
+        accountOperations.printState();
+    }
+
 }

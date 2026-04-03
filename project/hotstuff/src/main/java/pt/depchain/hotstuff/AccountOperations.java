@@ -24,6 +24,7 @@ import org.hyperledger.besu.evm.tracing.OperationTracer;
 import org.hyperledger.besu.evm.tracing.StandardJsonTracer;
 import org.hyperledger.besu.evm.worldstate.WorldUpdater;
 
+import pt.depchain.communication.Block;
 import pt.depchain.communication.State;
 
 
@@ -270,7 +271,7 @@ public class AccountOperations {
     //reward = gasUsed * gasPrice
     //gasused = gasLimit - remainingGas (from trace) ( vaIs buscar o campo gás no return ou revert)
 
-    public ExecutionResult genericCall(Address senderAddress, String calldata, boolean leader, Address NodeAddress, long gasPrice, long gasLimit) {
+    public ExecutionResult genericCall(Address senderAddress, String calldata, Address NodeAddress, long gasPrice, long gasLimit) {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         PrintStream printStream = new PrintStream(outputStream);
 
@@ -319,6 +320,7 @@ public class AccountOperations {
         boolean success = extractSuccess(outputStream);
         Bytes returnData = extractReturnData(outputStream);
 
+        System.out.println("Generic call result: " + (success ? "SUCCESS" : "FAILURE"));
         return new ExecutionResult(success, returnData);
     }
 
@@ -559,5 +561,36 @@ public class AccountOperations {
         }
 
         return Bytes.EMPTY;
+    }
+    public void setNonce(Address address, long nonce) {
+        WorldUpdater updater = simpleWorld.updater();
+
+        MutableAccount account = updater.getOrCreate(address);
+        account.setNonce(nonce);
+
+        updater.commit();
+    }
+
+    public void printState() {
+        System.out.println("=== CURRENT WORLD STATE ===");
+        for (String addr : userAccounts.keySet()) {
+            MutableAccount account = userAccounts.get(addr);
+            System.out.println("Address: " + addr);
+            System.out.println("  Balance: " + account.getBalance());
+            System.out.println("  Nonce: " + account.getNonce());
+            System.out.println("  Code size: " + account.getCode().size());
+        }
+    }
+
+    public Block updateState(Block block) {
+        
+        for (String addr : userAccounts.keySet()) {
+            MutableAccount account = userAccounts.get(addr);
+            State state = new State(account.getBalance().toBigInteger().floatValue(), (int) account.getNonce());
+           
+            block.setState(addr, state);
+
+        }
+        return block;
     }
 }

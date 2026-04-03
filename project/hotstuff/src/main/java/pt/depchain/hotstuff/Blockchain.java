@@ -82,7 +82,7 @@ public class Blockchain {
 
                     String calldataHex = normalizeCalldataHex(tx.getData());
                     if (calldataHex != null && !calldataHex.isEmpty()) {
-                        accountOperations.genericCall(sender, calldataHex, false, rewardNode);
+                        accountOperations.genericCall(sender, calldataHex, false, null, tx.getGasPrice(), tx.getGasLimit());
                     }
                 } catch (Exception e) {
                     System.out.println("[BLOCKCHAIN] Skipping invalid genesis tx: " + e.getMessage());

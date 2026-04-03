@@ -145,11 +145,19 @@ public class AccountOperations {
         }
         account.setBalance(Wei.of(initialBalance));
         userAccounts.put(accountAddress.toHexString(), account);
+
+        if (accountAddress.equals(Address.fromHexString("1234567891234567891234567891234567891234"))) {
+            this.contractAddress = accountAddress;
+            System.out.println("Contract account created at: " + accountAddress);
+        } else {
+            System.out.println("EOA created at: " + accountAddress + " with balance: " + initialBalance);
+        }
     }
 
     public void initializeAccount(String accountAddress, State accountState) {
         String normalizedHex = normalizeAddressHex(accountAddress);
         BigInteger initialBalance = BigInteger.valueOf((long) accountState.getBalance());
+        
         createAccount(Address.fromHexString(normalizedHex), initialBalance);
     }
 
@@ -183,7 +191,7 @@ public class AccountOperations {
         executor.worldUpdater(updater);
         executor.messageFrameType(MessageFrame.Type.CONTRACT_CREATION);
         executor.sender(deployer);
-
+        
         Bytes initCode = Bytes.fromHexString(deploymentBytecode);
         Bytes constructorArgs = encodeAddress(owner);
         Bytes input = Bytes.concatenate(initCode, constructorArgs);
@@ -191,7 +199,9 @@ public class AccountOperations {
         executor.code(input);
         executor.callData(Bytes.EMPTY);
         executor.execute();
-
+        // System.out.println("=== DEPLOYMENT TRACER ===");
+        // System.out.println(outputStream.toString());
+        // System.out.println("=== END OF DEPLOYMENT TRACER ===");
         Bytes runtimeCode = extractRuntimeCode(outputStream);
 
         // Extrair o storage final do trace (último frame antes do RETURN)
@@ -245,8 +255,12 @@ public class AccountOperations {
         return Bytes.wrap(padded);
     }
 
+    //recebe gas price, recebe gas limit
+    // executor.gas(gasLimit);
+    //reward = gasUsed * gasPrice
+    //gasused = gasLimit - remainingGas (from trace) ( vaIs buscar o campo gás no return ou revert)
 
-    public int genericCall(Address senderAddress, String calldata, boolean leader, Address NodeAddress) {
+    public int genericCall(Address senderAddress, String calldata, boolean leader, Address NodeAddress, long gasPrice, long gasLimit) {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         PrintStream printStream = new PrintStream(outputStream);
 
@@ -262,53 +276,136 @@ public class AccountOperations {
         executor.receiver(contractAddress);
         executor.code(simpleWorld.get(contractAddress).getCode());
         executor.callData(Bytes.fromHexString(calldata));
-
+        executor.gas(gasLimit);
         executor.execute();
 
-
-        updater.commit();
-
         // System.out.println("=== BALANCEOF TRACER ===");
-        //System.out.println(outputStream.toString());
+        // System.out.println(outputStream.toString());
         // System.out.println("=== END OF BALANCEOF TRACER ===");
-        long gasUsed = 1;
-        
+        long remainingGas = extractRemainingGas(outputStream);
+        long gasUsed = gasLimit - remainingGas;
+    
         // 4. If Leader, reward the NodeAddress account
-        if (leader && NodeAddress != null) {
+        if (NodeAddress != null) {
             var leaderAccount = updater.getOrCreate(NodeAddress);
+            var senderAccount = updater.getOrCreate(senderAddress);
             
             // Assuming a gas price of 1 (rewarding 1 Wei per gas used)
-            Wei reward = Wei.of(gasUsed); 
-            
+            Wei gasCost = Wei.of(gasUsed * gasPrice);
+            System.out.println("Gas cost:      " + gasCost);
+
             // Update the balance
-            leaderAccount.setBalance(leaderAccount.getBalance().add(reward));
-            
+            senderAccount.setBalance(senderAccount.getBalance().subtract(gasCost));
+            leaderAccount.setBalance(leaderAccount.getBalance().add(gasCost));
+
+            System.out.println("Sender: " + senderAccount.getBalance());
+            System.out.println("Leader: " + leaderAccount.getBalance());
             //System.out.println("Leader " + NodeAddress + " rewarded with " + gasUsed + " Wei.");
         }
+        updater.commit();
 
         System.out.println();
         return extractIntegerFromReturnData(outputStream);
     }
 
-    public static long extractGasUsedFromTrace(ByteArrayOutputStream outputStream, long initialGas) {
+    public static long extractRemainingGas(ByteArrayOutputStream outputStream) {
         String[] lines = outputStream.toString().split("\\r?\\n");
-        if (lines.length == 0) return 0;
 
-        // The last line or second-to-last line usually contains the final state
-        // We look for the "gas" field in the JSON
-        try {
-            JsonObject lastStep = JsonParser.parseString(lines[lines.length - 1]).getAsJsonObject();
-            
-            // Besu JsonTracer uses "gas" for remaining gas in hex (e.g., "0x...").
-            String gasHex = lastStep.get("gas").getAsString();
-            long gasRemaining = Long.decode(gasHex);
-            
-            return initialGas - gasRemaining;
-        } catch (Exception e) {
-            return 0;
+        // iterate backwards to find last valid step
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) continue;
+
+            try {
+                JsonObject obj = JsonParser.parseString(line).getAsJsonObject();
+
+                if (obj.has("gas")) {
+                    String gasHex = obj.get("gas").getAsString();
+                    return Long.decode(gasHex);
+                }
+            } catch (Exception ignored) {}
         }
+
+        throw new RuntimeException("No gas info found in trace");
     }
 
+    public String balanceOf(Address senderAddress, Address targetAddress, boolean leader, Address nodeAddress, long gasPrice) {
+
+        WorldUpdater updater = simpleWorld.updater();
+
+        MutableAccount senderAccount = updater.getOrCreate(senderAddress);
+        MutableAccount leaderAccount = nodeAddress != null ? updater.getOrCreate(nodeAddress) : null;
+
+        // read balance from SimpleWorld
+        Wei balance = simpleWorld.get(targetAddress).getBalance();
+
+        // fixed cost for read
+        Wei cost = Wei.of(5000);
+
+        Wei senderBalance = senderAccount.getBalance();
+
+        if (senderBalance.compareTo(cost) < 0) {
+            return "ERROR:Insufficient balance to pay read fee";
+        }
+
+        if (nodeAddress != null) {
+            senderAccount.setBalance(senderAccount.getBalance().subtract(cost));
+            leaderAccount.setBalance(leaderAccount.getBalance().add(cost));
+        }
+
+        updater.commit();
+
+        System.out.println("BalanceOf result: " + balance);
+        System.out.println("Sender balance: " + senderAccount.getBalance());
+        if (leaderAccount != null) {
+            System.out.println("Leader balance: " + leaderAccount.getBalance());
+        }
+
+        return "SUCCESS:" + balance.toBigInteger();
+    }
+    public String transfer_dep(Address senderAddress, Address recipientAddress, BigInteger amount, boolean leader, Address nodeAddress,long gasPrice) {
+
+        WorldUpdater updater = simpleWorld.updater();
+
+        MutableAccount sender = updater.getOrCreate(senderAddress);
+        MutableAccount recipient = updater.getOrCreate(recipientAddress);
+        MutableAccount leaderAccount = nodeAddress != null ? updater.getOrCreate(nodeAddress) : null;
+
+        Wei senderBalance = sender.getBalance();
+        Wei transferAmount = Wei.of(amount);
+        Wei fee = Wei.of(5000); // fixed fee for transfer (adjust as needed)
+
+        // total cost = amount + fee
+        Wei totalCost = transferAmount.add(fee);
+
+        // 1. Check sufficient balance
+        if (senderBalance.compareTo(totalCost) < 0) {
+            return "ERROR:Insufficient balance for transfer";
+        }
+
+        // 2. Apply transfer
+        sender.setBalance(senderBalance.subtract(totalCost));
+        recipient.setBalance(recipient.getBalance().add(transferAmount));
+
+        // 3. Fee handling (optional leader reward)
+        if (leaderAccount != null) {
+            leaderAccount.setBalance(
+                leaderAccount.getBalance().add(fee)
+            );
+        }
+
+        // 4. Commit state
+        updater.commit();
+
+        System.out.println("Transfer executed:");
+        System.out.println("Sender: " + sender.getBalance());
+        System.out.println("Recipient: " + recipient.getBalance());
+        if (leaderAccount != null) {
+            System.out.println("Leader: " + leaderAccount.getBalance());
+        }
+
+        return "SUCCESS";
+    }
     public static int extractIntegerFromReturnData(ByteArrayOutputStream byteArrayOutputStream) {
         String[] lines = byteArrayOutputStream.toString().split("\\r?\\n");
         JsonObject jsonObject = JsonParser.parseString(

@@ -675,7 +675,7 @@ public class Node {
         if (tx.getGasLimit() <= 0) return false;
 
         if (tx.getData() == null) return false;
-        /*
+        
         if (tx.getType().equals("DEP")) {
             System.out.println("[NODE] Validating 1");
 
@@ -688,9 +688,7 @@ public class Node {
             System.out.println("[NODE] Validating 2");
             String[] parts = dataString.split("\\|");
             if (parts.length < 1) return false;
-
             String operation = parts[0];
-
             switch (operation) {
 
                 case "TRANSFER_DEP": {
@@ -716,7 +714,7 @@ public class Node {
                     return false;
             }
            
-        } */
+        } 
 
         if (tx.getSignature() == null) return false;
 

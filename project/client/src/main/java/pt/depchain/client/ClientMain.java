@@ -122,13 +122,13 @@ public class ClientMain {
                     System.out.print("Gas limit: ");
                     long gasLimit = Long.parseLong(scanner.nextLine());
 
-                    //Address add = getAddressN(to);
-                    Address add = Address.fromHexString(normalizeAddressHex(to));
+                    Address addFrom = Address.fromHexString(normalizeAddressHex(clientId));
+                    Address addTo = Address.fromHexString(normalizeAddressHex(to));
                     //System.out.println("Recipient address: " + add);
 
                     messageId++;
-                    String dataStr = transfer + padAddress(add) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
-
+                    String dataStr = "TRANSFER_DEP" + "|" + amount;
+                    //TODO TRATAMENTO DE FROM E TO
                     Transaction tx = new Transaction(
                         "DEP",
                         clientId,
@@ -137,7 +137,7 @@ public class ClientMain {
                         gasPrice,
                         gasLimit,
                         messageId,
-                        null     
+                        null
                     );
 
                     String txString = gson.toJson(tx);
@@ -463,7 +463,8 @@ public class ClientMain {
 
                     messageId++;
                     Address add = Address.fromHexString(normalizeAddressHex(account));
-                    String dataStr = balanceOf + padAddress(add);
+                    String dataStr = "BALANCE_DEP";
+                    //TODO TRATAMENTO DE FROM E TO
                     Transaction tx = new Transaction(
                         "DEP",
                         clientId,

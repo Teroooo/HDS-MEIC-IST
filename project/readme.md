@@ -57,7 +57,6 @@ mvn exec:java "-Dexec.mainClass=pt.depchain.service.ByzantineNode" "-Dexec.args=
 **bad-hash** - When Node is leader will give a corrupted command.  
 **duplicate-msg** - Node sends 2 identical votes.  
 **bad-share** - This node will sign with an invalide share.  
-**wrong-sender** - Node spoofs its ID as the next one in line, triggers warning.  
 
 # Full-scope tests: 
 
@@ -74,9 +73,7 @@ mvn clean test -pl test -Dtest=<TestName>
 
 **LeaderCrashAppendTest** - 4 safe nodes, leader crash happens in view 2, consensus reached.  
 
-**ReplicaCrashAppendTest** - 4 safe nodes, replica crashes happens in view 2, consensus reached.  
-
-**WrongSenderTest** - 3 Safe nodes, 1 Byzantine Node that fakes its ID as the next node, consensus reached.  
+**ReplicaCrashAppendTest** - 4 safe nodes, replica crashes happens in view 2, consensus reached.   
 
 **WrongHashTest** - 3 Safe nodes, 1 Byzantine Leader Node that proposes a block with a corrupted hash, consensus reached.  
 

@@ -126,8 +126,6 @@ public class ByzantineNode {
                 case "bad-hash":      attackMode = ByzantineHotStuffConsensus.AttackMode.BAD_HASH; break;
                 case "duplicate-msg": attackMode = ByzantineHotStuffConsensus.AttackMode.DUPLICATE_MSG; break;
                 case "bad-share":     attackMode = ByzantineHotStuffConsensus.AttackMode.BAD_SHARE; break;
-                case "wrong-sender":  attackMode = ByzantineHotStuffConsensus.AttackMode.WRONG_SENDER; break;
-                case "approval-frontrunning":  attackMode = ByzantineHotStuffConsensus.AttackMode.APPROVAL_FRONTRUNNING; break;
                 default:
                     System.err.println("Unknown attack mode: " + args[3]);
                     System.exit(1);

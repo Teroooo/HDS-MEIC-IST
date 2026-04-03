@@ -1,6 +1,12 @@
 package pt.depchain.service;
 
+import java.io.IOException;
+import java.nio.file.Files; 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.KeyFactory;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
@@ -18,8 +24,11 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.crypto.SecretKey;
+
+import org.apache.tuweni.crypto.Hash;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -33,6 +42,7 @@ import pt.depchain.crypto.CryptoLibrary;
 import pt.depchain.hotstuff.Blockchain;
 import pt.depchain.hotstuff.HotStuffConsensus;
 import pt.depchain.hotstuff.HotStuffMessage;
+import org.hyperledger.besu.datatypes.Address;
 
 public class Node {
     
@@ -56,6 +66,7 @@ public class Node {
 
 
     private static List<Transaction> pendingTransactions = new ArrayList<>();
+    private static HashMap<String, Address> addressBook = new HashMap<>();
 
     enum RequestState {
         PENDING,
@@ -116,6 +127,10 @@ public class Node {
 
         // Initialize consensus
         consensus = new HotStuffConsensus(nodeIdInt, crypto.l, (int) Math.floor((crypto.l-1)/3), link, crypto, blockchain);
+        loadAddressBook();
+        //addressBook.forEach((clientName, address) -> {
+        //    System.out.println("Client: " + clientName + " | Address: " + address.toHexString());
+        //});
 
         // 1. Start receiver thread FIRST
         startReceiverThread(link, nodeId, crypto);
@@ -764,6 +779,80 @@ public class Node {
             default:
                 return 30;
         }
+    }
+
+    public static void loadAddressBook() {
+        Path configDir = Paths.get("..", "config");
+
+        // Ensure the directory exists to avoid crashes
+        if (!Files.exists(configDir)) {
+            System.err.println("Config directory not found at: " + configDir.toAbsolutePath());
+            return;
+        }
+
+        try (Stream<Path> stream = Files.list(configDir)) {
+            stream
+                .filter(file -> !Files.isDirectory(file))
+                .filter(file -> file.toString().endsWith(".pub"))
+                .forEach(file -> {
+                    String fileName = file.getFileName().toString();
+                    String clientName = fileName.substring(0, fileName.lastIndexOf('.'));
+
+                    try {
+                        // 1. READ the file content here
+                        String content = Files.readString(file);
+                        
+                        // 2. PASS the content (not the name) to normalize
+                        String hexAddress = normalizeAddressHex(content);
+                        
+                        // 3. STORE in the address book
+                        addressBook.put(clientName, Address.fromHexString(hexAddress));
+                        
+                        System.out.println("Loaded: " + clientName + " -> " + hexAddress);
+                    } catch (Exception e) {
+                        System.err.println("Skipping " + fileName + " due to error: " + e.getMessage());
+                    }
+                });
+        } catch (IOException e) {
+            System.err.println("Could not read config directory: " + e.getMessage());
+        }
+    }
+
+    public static String normalizeAddressHex(String publicKeyContent) {
+        // 1. Clean the PEM string: remove headers, footers, and ALL whitespace
+        String cleanBase64 = publicKeyContent
+                .replace("-----BEGIN PUBLIC KEY-----", "")
+                .replace("-----END PUBLIC KEY-----", "")
+                .replaceAll("\\s", ""); 
+
+        // 2. Decode the Base64 to get the raw DER bytes
+        byte[] derBytes = Base64.getDecoder().decode(cleanBase64);
+
+        // 3. Hash the bytes
+        String hex;
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(derBytes);
+            
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            hex = sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 algorithm not found", e);
+        }
+
+        // 4. Existing length logic
+        if (hex.length() == 64) {
+            return hex.substring(0, 40); 
+        }
+
+        if (hex.length() == 40) {
+            return hex;
+        }
+
+        throw new IllegalArgumentException("Invalid address key length derived: " + hex.length());
     }
 
 }

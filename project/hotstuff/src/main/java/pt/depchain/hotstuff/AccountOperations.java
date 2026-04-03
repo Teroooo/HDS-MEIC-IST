@@ -1,19 +1,10 @@
 package pt.depchain.hotstuff;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-
-import pt.depchain.communication.Block;
-import pt.depchain.communication.State;
-
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileReader;
 import java.io.PrintStream;
-import java.io.FileReader;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,12 +23,9 @@ import org.hyperledger.besu.evm.operation.Operation.OperationResult;
 import org.hyperledger.besu.evm.tracing.OperationTracer;
 import org.hyperledger.besu.evm.tracing.StandardJsonTracer;
 import org.hyperledger.besu.evm.worldstate.WorldUpdater;
-import org.w3c.dom.Node;
-import org.web3j.crypto.Hash;
-import org.web3j.utils.Numeric;
-import org.hyperledger.besu.datatypes.Address;
-import org.apache.tuweni.bytes.Bytes;
-import org.apache.tuweni.bytes.Bytes32;
+
+import pt.depchain.communication.State;
+
 
 public class AccountOperations {
     private SimpleWorld simpleWorld = new SimpleWorld();
@@ -55,8 +43,6 @@ public class AccountOperations {
     String decreaseAllowance;
 
     public AccountOperations() {
-        this.contractAddress = Address.fromHexString("1234567891234567891234567891234567891234");
-
         try {
             // Option 1: Move up one level to the sibling ERC20 folder (../ERC20/...)
             Path parentErc20 = Path.of("..", "ERC20", "keccak_256.json");
@@ -91,11 +77,10 @@ public class AccountOperations {
         } catch (Exception e) {
             throw new RuntimeException("Failed to load ERC20 selectors from keccak_256.json at specified paths", e);
         }
-
-
     }
 
     public void main(String[] args) {
+
         // // === Step 1: Create EOAs ===
         // Address client1Addr = Address.fromHexString("1111111111111111111111111111111111111111");
         // Address client2Addr = Address.fromHexString("2222222222222222222222222222222222222222");
@@ -116,36 +101,31 @@ public class AccountOperations {
 
         // // After deploy
         // System.out.println("After deploy:");
-        // System.out.println("Contract address: " + callBalanceOf(contractAddress, contractAddress));
-        // System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
-        // System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
-        // System.out.println("Client3: " + callBalanceOf(client3Addr, client3Addr));
+        // System.out.println("Contract address: " + genericCall(contractAddress, balanceOf + padAddress(contractAddress), false, client3Addr));
+        // System.out.println("Client1: " + genericCall(contractAddress, balanceOf + padAddress(client1Addr), false, client3Addr));
+        // System.out.println("Client2: " + genericCall(contractAddress, balanceOf + padAddress(client2Addr), false, client3Addr));
+        // System.out.println("Client3: " + genericCall(contractAddress, balanceOf + padAddress(client3Addr), false, client3Addr));
 
-        // String data = balanceOf + padAddress(client1Addr);
-        // System.out.println(genericCall(client1Addr, data, true, client3Addr));
-        // BigInteger value = BigInteger.valueOf(20);
-        // data = transfer + padAddress(client1Addr) + convertIntegerToHex256Bit(value.intValue());
-        // genericCall(contractAddress, data, true, client3Addr);
+        // //String data = balanceOf + padAddress(client1Addr);
 
-        //String data = balanceOf + padAddress(client1Addr);
+        // // // // Distribute
+        // // transfer(contractAddress, client1Addr, BigInteger.valueOf(1000));
+        // // transfer(contractAddress, client2Addr, BigInteger.valueOf(1000));
 
-        // // // Distribute
-        // transfer(contractAddress, client1Addr, BigInteger.valueOf(1000));
-        // transfer(contractAddress, client2Addr, BigInteger.valueOf(1000));
-
-        // // // Distribute
+        // // // // Distribute
         // String data = transfer + padAddress(client1Addr) + convertIntegerToHex256Bit(BigInteger.valueOf(1000).intValue());
+        // System.out.println("Data for transfer: " + data);
         // genericCall(contractAddress, data, true, client3Addr);
         // data = transfer + padAddress(client2Addr) + convertIntegerToHex256Bit(BigInteger.valueOf(1000).intValue());
         // genericCall(contractAddress, data, true, client3Addr);
 
 
-        //After distribution
+        // //After distribution
         // System.out.println("After distribution:");
-        // System.out.println("Contract address: " + callBalanceOf(contractAddress, contractAddress));
-        // System.out.println("Client1: " + callBalanceOf(client1Addr, client1Addr));
-        // System.out.println("Client2: " + callBalanceOf(client2Addr, client2Addr));
-        // System.out.println("Client3: " + callBalanceOf(client3Addr, client3Addr));
+        // System.out.println("Contract address: " + genericCall(contractAddress, balanceOf + padAddress(contractAddress), false, client3Addr));
+        // System.out.println("Client1: " + genericCall(contractAddress, balanceOf + padAddress(client1Addr), false, client3Addr));
+        // System.out.println("Client2: " + genericCall(contractAddress, balanceOf + padAddress(client2Addr), false, client3Addr));
+        // System.out.println("Client3: " + genericCall(contractAddress, balanceOf + padAddress(client3Addr), false, client3Addr));
 
         // // === Step 4: Transfer tokens ===
         // System.out.println("\nTransferring 100 tokens from client1 to client2...\n");
@@ -165,7 +145,6 @@ public class AccountOperations {
         }
         account.setBalance(Wei.of(initialBalance));
         userAccounts.put(accountAddress.toHexString(), account);
-        System.out.println("Created account: " + accountAddress + " with balance: " + initialBalance);
     }
 
     public void initializeAccount(String accountAddress, State accountState) {
@@ -193,7 +172,6 @@ public class AccountOperations {
         throw new IllegalArgumentException("Invalid address key length in genesis state: " + rawKey);
     }
 
-    
     public void deployContract(Address deployer, Address owner) {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         PrintStream printStream = new PrintStream(outputStream);
@@ -293,12 +271,10 @@ public class AccountOperations {
         // System.out.println("=== BALANCEOF TRACER ===");
         //System.out.println(outputStream.toString());
         // System.out.println("=== END OF BALANCEOF TRACER ===");
-        long gasUsed = 1; //extractGasUsedFromTrace(outputStream, 1000);
+        long gasUsed = 1;
         
-        //System.out.println(outputStream.toString());
         // 4. If Leader, reward the NodeAddress account
         if (leader && NodeAddress != null) {
-            // Get the mutable account for the leader
             var leaderAccount = updater.getOrCreate(NodeAddress);
             
             // Assuming a gas price of 1 (rewarding 1 Wei per gas used)

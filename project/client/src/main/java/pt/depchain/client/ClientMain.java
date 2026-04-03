@@ -6,12 +6,18 @@ import pt.depchain.crypto.CryptoLibrary;
 import java.net.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 import java.util.Scanner;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.Gson;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.HexFormat;
+import java.math.BigInteger;
 
 import org.hyperledger.besu.datatypes.Address;
 
@@ -116,24 +122,18 @@ public class ClientMain {
                     System.out.print("Gas limit: ");
                     long gasLimit = Long.parseLong(scanner.nextLine());
 
+                    //Address add = getAddressN(to);
+                    Address add = Address.fromHexString(normalizeAddressHex(to));
+                    //System.out.println("Recipient address: " + add);
+
                     messageId++;
-
-                    Address targetAddr = Address.fromHexString(to);
-
-                    // 3. PAD ADDRESS TO 32 BYTES (64 chars)
-                    // We take the hex of the address and add 24 leading zeros
-                    String cleanAddrHex = targetAddr.toHexString().replace("0x", "");
-                    String paddedAddr = "000000000000000000000000" + cleanAddrHex;
-
-                    // 4. CONSTRUCT CALLDATA
-                    // balanceOf selector (8 chars) + padded address (64 chars) = 72 chars
-                    String data = balanceOf + paddedAddr;
+                    String dataStr = transfer + padAddress(add) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
 
                     Transaction tx = new Transaction(
                         "DEP",
                         clientId,
                         to,
-                        data.getBytes(),
+                        dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
                         messageId,
@@ -184,12 +184,13 @@ public class ClientMain {
 
 
                     messageId++;
-
+                    Address add = Address.fromHexString(normalizeAddressHex(to));
+                    String dataStr = transfer + padAddress(add) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
                     Transaction tx = new Transaction(
                         "IST",
                         clientId,
                         IST_CONTRACT_ADDRESS, // n sei se depois temos de mudar o address do contract para alguma hash em vez de ser só "IST_CONTRACT", mas para já fica assim
-                        null, //devemos ter o keccak das functions + hash dos args
+                        dataStr.getBytes(), //devemos ter o keccak das functions + hash dos args
                         gasPrice,
                         gasLimit,
                         messageId,
@@ -243,12 +244,15 @@ public class ClientMain {
 
 
                     messageId++;
+                    Address addFrom = Address.fromHexString(normalizeAddressHex(from));
+                    Address addTo = Address.fromHexString(normalizeAddressHex(to));
 
+                    String dataStr = transfer + padAddress(addFrom) + padAddress(addTo) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
                     Transaction tx = new Transaction(
                         "IST",
                         clientId,
                         IST_CONTRACT_ADDRESS,
-                        null,
+                        dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
                         messageId,
@@ -296,12 +300,13 @@ public class ClientMain {
 
 
                     messageId++;
-
+                    Address addSpender = Address.fromHexString(normalizeAddressHex(spender));
+                    String dataStr = increaseAllowance + padAddress(addSpender) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
                     Transaction tx = new Transaction(
                         "IST",
                         clientId,
                         IST_CONTRACT_ADDRESS,
-                        null,
+                        dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
                         messageId,
@@ -349,12 +354,13 @@ public class ClientMain {
 
 
                     messageId++;
-
+                    Address addSpender = Address.fromHexString(normalizeAddressHex(spender));
+                    String dataStr = decreaseAllowance + padAddress(addSpender) + convertIntegerToHex256Bit(BigInteger.valueOf(amount).intValue());
                     Transaction tx = new Transaction(
                         "IST",
                         clientId,
                         IST_CONTRACT_ADDRESS,
-                        null,
+                        dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
                         messageId,
@@ -402,12 +408,15 @@ public class ClientMain {
 
 
                     messageId++;
+                    Address addOwner = Address.fromHexString(normalizeAddressHex(owner));
+                    Address addSpender = Address.fromHexString(normalizeAddressHex(spender));
 
+                    String dataStr = allowance + padAddress(addOwner) + padAddress(addSpender);
                     Transaction tx = new Transaction(
                         "IST",
                         clientId,
                         IST_CONTRACT_ADDRESS,
-                        null,
+                        dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
                         messageId,
@@ -452,17 +461,14 @@ public class ClientMain {
                     System.out.print("Gas limit: ");
                     long gasLimit = Long.parseLong(scanner.nextLine());
 
-
                     messageId++;
-
-                    String dataStr = "BALANCE_DEP";
-                    byte[] data = dataStr.getBytes();
-
+                    Address add = Address.fromHexString(normalizeAddressHex(account));
+                    String dataStr = balanceOf + padAddress(add);
                     Transaction tx = new Transaction(
                         "DEP",
                         clientId,
                         account,
-                        data,
+                        dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
                         messageId,
@@ -505,12 +511,13 @@ public class ClientMain {
 
 
                     messageId++;
-
+                    Address add = Address.fromHexString(normalizeAddressHex(clientId));
+                    String dataStr = balanceOf + padAddress(add);
                     Transaction tx = new Transaction(
                         "IST",
                         clientId,
                         IST_CONTRACT_ADDRESS,
-                        null,
+                        dataStr.getBytes(),
                         gasPrice,
                         gasLimit,
                         messageId,
@@ -599,12 +606,6 @@ public class ClientMain {
         link.broadcastWithId(replicas, Message.Type.TRANSACTION, payload, messageId);
     }
 
-    // TEMPORARY: for now we just use the clientId as the address, but this should be changed to a proper address derived from the public key
-    private static String getAddress(String clientId) {
-        return clientId; // TEMPORARY
-    }
-
-
     public static void init_keccak_256() {
         try {
             // Option 1: Move up one level to the sibling ERC20 folder (../ERC20/...)
@@ -628,7 +629,7 @@ public class ClientMain {
             JsonObject jsonObject = JsonParser.parseString(content).getAsJsonObject();
 
             // Assigning values from JSON
-            bytecode = jsonObject.get("EVM Bytecode").getAsString();
+            bytecode = jsonObject.get("EVM Runtime Bytecode").getAsString();
             allowance = jsonObject.get("allowance(address,address)").getAsString();
             balanceOf = jsonObject.get("balanceOf(address)").getAsString();
             transfer = jsonObject.get("transfer(address,uint256)").getAsString();
@@ -639,5 +640,63 @@ public class ClientMain {
         } catch (Exception e) {
             throw new RuntimeException("Failed to load ERC20 selectors from keccak_256.json at specified paths", e);
         }
+    }
+
+    private static String padAddress(Address addr) {
+        String hex = addr.toHexString().replace("0x", "");
+        return "000000000000000000000000" + hex;
+    }
+
+    public static String convertIntegerToHex256Bit(int number) {
+        BigInteger bigInt = BigInteger.valueOf(number);
+
+        return String.format("%064x", bigInt);
+    }
+
+    public static String normalizeAddressHex(String clientName) {
+        Path path = Paths.get("..", "config", clientName + ".pub");
+        
+        String publicKeyContent;
+        try {
+            publicKeyContent = Files.readString(path);
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("Failed to read public key file: " + path, e);
+        }
+
+        // 1. Clean the PEM string: remove headers, footers, and all whitespace
+        String cleanBase64 = publicKeyContent
+                .replace("-----BEGIN PUBLIC KEY-----", "")
+                .replace("-----END PUBLIC KEY-----", "")
+                .replaceAll("\\s", ""); // Removes newlines and spaces
+
+        // 2. Decode the Base64 to get the raw DER bytes
+        byte[] derBytes = Base64.getDecoder().decode(cleanBase64);
+
+        // 3. Hash the bytes (usually SHA-256 or Keccak-256) to derive an address
+        String hex;
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(derBytes);
+            
+            // Convert the hash to a Hex String
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            hex = sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 algorithm not found", e);
+        }
+
+        // 4. Apply your existing length logic
+        if (hex.length() == 64) {
+            return hex.substring(0, 40); // Standard approach for many chains
+        }
+
+        if (hex.length() == 40) {
+            return hex;
+        }
+
+        throw new IllegalArgumentException("Invalid address key length derived from file: " + hex);
     }
 }

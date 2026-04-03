@@ -675,8 +675,9 @@ public class Node {
         if (tx.getGasLimit() <= 0) return false;
 
         if (tx.getData() == null) return false;
-
+        /*
         if (tx.getType().equals("DEP")) {
+            System.out.println("[NODE] Validating 1");
 
             String dataString;
             try {
@@ -684,7 +685,7 @@ public class Node {
             } catch (Exception e) {
                 return false;
             }
-
+            System.out.println("[NODE] Validating 2");
             String[] parts = dataString.split("\\|");
             if (parts.length < 1) return false;
 
@@ -711,9 +712,11 @@ public class Node {
                 }
 
                 default:
+                    System.out.println("[NODE] Validating DEFAULT");
                     return false;
             }
-        }
+           
+        } */
 
         if (tx.getSignature() == null) return false;
 
